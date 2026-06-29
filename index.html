@@ -157,6 +157,7 @@
 <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="wv_blocks.js"></script>
+<script src="county_fiber.js"></script>
 <script>
 /* ===================== DATA ===================== */
 const NAT_CRIME = 359.1;   // US violent crime rate /100k (FBI 2024)
@@ -258,6 +259,15 @@ const WVF = {
   "54109":{any:993,gig:993,hu:10887}
 };
 const WV_GIG_AVG = 41.3, WV_ANY_AVG = 41.9;
+/* National & official county fiber from companion county_fiber.js (window.COUNTYFIBER): {fips:{g:gigabit%,a:any%}}, FCC residential, Dec 2025. */
+const cf = fips => (window.COUNTYFIBER && COUNTYFIBER[fips]) || null;
+const fipsToName = {};   // 5-digit county FIPS -> name; built once from county geometry on first drill
+function countyData(fips){
+  const f=cf(fips), w=WV[fips]||null;
+  return { name: fipsToName[fips] || (w&&w.name) || (""+fips),
+           gig: f?f.g:null, any: f?f.a:null,
+           bb: w?(w.bb??null):null, crime: w?(w.crime??null):null };
+}
 
 /* ===================== COLORS ===================== */
 const fiberClass = f => f < 45 ? 0 : (f <= 60 ? 1 : 2);
@@ -301,15 +311,7 @@ const CONUS = L.latLngBounds([[24.4,-125.0],[49.5,-66.5]]);
 const tooltip=document.getElementById("tooltip");
 const search=document.getElementById("search");
 const usRows=Object.entries(DATA).map(([name,d])=>({name,fiber:d.fiber,crime:d.crime,ratio:d.crime/NAT_CRIME}));
-const wvRows=Object.keys(WV).map(fips=>{
-  const m=WV[fips], f=WVF[fips]||{};
-  const anyPct=coPct(f,"any"), gigPct=coPct(f,"gig");
-  return {fips,name:m.name,
-          gigPct:gigPct==null?null:+gigPct.toFixed(1),
-          anyPct:anyPct==null?null:+anyPct.toFixed(1),
-          bb:m.bb??null, crime:m.crime??null, ratio:m.crime!=null?m.crime/NAT_CRIME:null,
-          any:f.any??null, gig:f.gig??null, hu:f.hu??null};
-});
+let coRows=[];   // current drilled state's county rows (built in drillDown)
 
 /* ===================== MAP (Leaflet + terrain) ===================== */
 const map=L.map("map",{center:[38.9,-80.6],zoom:7,minZoom:3,maxZoom:16,zoomControl:true,worldCopyJump:false});
@@ -369,8 +371,8 @@ function styleUS(f){
 }
 function countyCell(fips){
   let c=NODATA, has=false;
-  if(coView==="gig"){ const p=coPct(WVF[fips],"gig"); if(p!=null){c=fiberCoColor(p);has=true;} }
-  else if(coView==="fiberAny"){ const p=coPct(WVF[fips],"any"); if(p!=null){c=fiberCoColor(p);has=true;} }
+  if(coView==="gig"){ const f=cf(fips); if(f){c=fiberCoColor(f.g);has=true;} }
+  else if(coView==="fiberAny"){ const f=cf(fips); if(f){c=fiberCoColor(f.a);has=true;} }
   else if(coView==="bb"){ const m=WV[fips]; if(m&&m.bb!=null){c=bbColor(m.bb);has=true;} }
   else { const m=WV[fips]; if(m&&m.crime!=null){c=coCrimeCol(m.crime);has=true;} }
   return {c,has};
@@ -418,6 +420,8 @@ async function drillDown(fips,name){
     if(!countiesTopo) countiesTopo=await d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json");
     const geoms=countiesTopo.objects.counties.geometries.filter(g=>String(g.id).startsWith(fips));
     const fc=topojson.feature(countiesTopo,{type:"GeometryCollection",geometries:geoms});
+    if(!Object.keys(fipsToName).length) countiesTopo.objects.counties.geometries.forEach(g=>{ fipsToName[String(g.id)]=g.properties&&g.properties.name; });
+    coRows=fc.features.map(ft=>{ const id=String(ft.id), d=countyData(id); return {fips:id, name:d.name, gigPct:d.gig, anyPct:d.any, bb:d.bb, crime:d.crime}; });
     nodeByFips.clear(); nodeByName.clear();
     if(dataLayer) map.removeLayer(dataLayer);
     dataLayer=L.geoJSON(fc,{style:styleCounty,onEachFeature:onEachCounty}).addTo(map);
@@ -455,17 +459,12 @@ function showTipUS(ev,f){
   tooltip.innerHTML=h; tooltip.style.opacity=1; place(ev);
 }
 function showTipCounty(ev,f){
-  const fips=String(f.id), m=WV[fips], ff=WVF[fips];
-  const name=(m&&m.name)||(f.properties&&f.properties.name)||"County";
-  let h=`<h4>${name} County</h4>`;
-  if(ff&&ff.hu){
-    h+=row("Gigabit fiber",fmtPct(coPct(ff,"gig")),1);
-    h+=row("Any fiber",fmtPct(coPct(ff,"any")));
-    h+=row("Fiber homes",ff.gig.toLocaleString()+" / "+ff.hu.toLocaleString()+" hu");
-  } else h+=row("Fiber","no data");
-  if(m&&m.bb!=null) h+=row("Broadband adoption",fmtPct(m.bb));
-  if(m&&m.crime!=null) h+=row("Violent crime",fmtRate(m.crime)+" /100k ("+ratioPct(m.crime)+"% of US)");
-  else h+=row("Violent crime","no county data");
+  const d=countyData(String(f.id));
+  let h=`<h4>${escapeHtml(d.name)} County</h4>`;
+  if(d.gig!=null){ h+=row("Gigabit fiber",fmtPct(d.gig),1); h+=row("Any fiber",fmtPct(d.any)); }
+  else h+=row("Fiber","no data");
+  if(d.bb!=null) h+=row("Broadband adoption",fmtPct(d.bb));
+  if(d.crime!=null) h+=row("Violent crime",fmtRate(d.crime)+" /100k ("+ratioPct(d.crime)+"% of US)");
   tooltip.innerHTML=h; tooltip.style.opacity=1; place(ev);
 }
 
@@ -533,14 +532,14 @@ function blockFiberHtml(block){
     <div class="ap-row">Fiber available here: ${status}</div>`;
 }
 function countyFromBlockHtml(block){
-  if(!block||block.slice(0,2)!=="54") return "";
-  const fips=block.slice(0,5), m=WV[fips], ff=WVF[fips];
-  if(!m) return "";
-  const gig=ff?fmtPct(coPct(ff,"gig")):"—", any=ff?fmtPct(coPct(ff,"any")):"—";
-  const ad=m.bb!=null?fmtPct(m.bb):"—", cr=m.crime!=null?(Math.round(m.crime)+" /100k"):"—";
-  return `<div class="ap-sub">${escapeHtml(m.name)} County — county-wide</div>
-    <div class="ap-row">Gigabit: <b>${gig}</b> · Any fiber: <b>${any}</b></div>
-    <div class="ap-row">Adoption: <b>${ad}</b> · Crime: <b>${cr}</b></div>`;
+  if(!block||block.length<5) return "";
+  const d=countyData(block.slice(0,5));
+  if(d.gig==null && d.bb==null && d.crime==null) return "";
+  const gig=d.gig!=null?fmtPct(d.gig):"—", any=d.any!=null?fmtPct(d.any):"—";
+  let h=`<div class="ap-sub">${escapeHtml(d.name)} County — county-wide (FCC)</div>
+    <div class="ap-row">Gigabit: <b>${gig}</b> · Any fiber: <b>${any}</b></div>`;
+  if(d.bb!=null||d.crime!=null){ const ad=d.bb!=null?fmtPct(d.bb):"—", cr=d.crime!=null?(Math.round(d.crime)+" /100k"):"—"; h+=`<div class="ap-row">Adoption: <b>${ad}</b> · Crime: <b>${cr}</b></div>`; }
+  return h;
 }
 async function resolveAddress(query, coords){
   const q=(query||"").trim(); if(!q) return;
@@ -596,8 +595,8 @@ document.getElementById("addrBtn").addEventListener("click",()=>resolveAddress(a
 
 function stateOptions(){
   return [...stateNameFips.keys()].sort().map(n=>{
-    const f=stateNameFips.get(n), has=(f==="54");
-    return `<option value="${f}" data-name="${n}">${n}${has?"  ✓ data":""}</option>`;
+    const f=stateNameFips.get(n);
+    return `<option value="${f}" data-name="${n}">${n}${f==="54"?"  ★ full detail":""}</option>`;
   }).join("");
 }
 function renderControls(){
@@ -610,7 +609,9 @@ function renderControls(){
       const o=e.target.selectedOptions[0]; if(o.value) drillDown(o.value,o.dataset.name);
     });
   }else{
-    seg.innerHTML=`<button data-v="gig">Gigabit fiber</button><button data-v="fiberAny">Any fiber</button><button data-v="bb">Broadband adoption</button><button data-v="crime">Violent crime</button>`;
+    const wv = currentFips==="54";
+    if(!wv && (coView==="bb"||coView==="crime")) coView="gig";
+    seg.innerHTML=`<button data-v="gig">Gigabit fiber</button><button data-v="fiberAny">Any fiber</button>`+(wv?`<button data-v="bb">Broadband adoption</button><button data-v="crime">Violent crime</button>`:``);
     [...seg.children].forEach(b=>b.classList.toggle("active",b.dataset.v===coView));
     dc.innerHTML=`<button class="back" id="backBtn">← Back to US map</button>`;
     document.getElementById("backBtn").addEventListener("click",backToUS);
@@ -626,13 +627,12 @@ function updateHeader(){
     B.className=""; B.innerHTML="";
   }else{
     T.textContent=currentName+" — county-level detail";
-    S.textContent="Fiber, adoption & crime over USGS topo terrain. Each county is labeled with its centroid elevation; switch basemaps or zoom in for contour lines, and use ⛰ Probe to click for any-point heights.";
+    S.textContent="Official FCC fiber availability by county, over USGS topo terrain. Each county is labeled with its elevation; switch basemaps or zoom in for contour lines, and use ⛰ Probe for any-point heights.";
+    B.className="show";
     if(currentFips==="54"){
-      B.className="show";
-      B.innerHTML="Showing <b>West Virginia</b> over the <b>USGS topographic basemap</b>, each county labeled with its elevation (ft) — notice how the fiber gaps track the Appalachian ridgelines. Toggle 🔢 Elevations or ⛰ Probe (click the map) for heights. Fiber layers: <b>FCC</b> (Dec 2025), shown as est. % of homes (FCC locations ÷ Census housing units), a few points below FCC's official figure. <b>Adoption</b> is a separate Census measure (any-internet subscription). Crime is reported for only 8 of 55 counties (translucent = none).";
+      B.innerHTML="Showing <b>West Virginia</b> — fiber is <b>official FCC</b> residential availability by county (Dec 2025), gigabit and any-fiber. WV also carries the extra layers — <b>broadband adoption</b> (Census) and <b>violent crime</b> (8 of 55 counties) — and the <b>address search resolves to the exact census block</b>. Notice how the fiber gaps track the Appalachian ridgelines.";
     }else{
-      B.className="show";
-      B.innerHTML="<b>"+currentName+"</b>: granular data isn't loaded for this state yet — counties are drawn translucent over the terrain. Ask me to add "+currentName+" and I'll wire it up.";
+      B.innerHTML="Showing <b>"+escapeHtml(currentName)+"</b> — county <b>fiber availability</b> from the FCC (Dec 2025, official residential %), gigabit and any-fiber, plus per-county elevation. <b>Broadband-adoption, crime, and exact-block address lookup are West Virginia-only</b>; for an address here the popup shows county-level fiber.";
     }
   }
 }
@@ -641,7 +641,6 @@ function updateHeader(){
 function grad(fn,a,b,n=24){let s=[];for(let i=0;i<=n;i++){const t=i/n;s.push(fn(a+(b-a)*t)+" "+(t*100).toFixed(1)+"%");}return"linear-gradient(to right,"+s.join(",")+")";}
 function renderLegend(){
   const el=document.getElementById("legend");
-  if(level==="county"&&currentFips!=="54"){ el.innerHTML=`<div class="leg-note">No granular data loaded for ${currentName} yet — ask to add it.</div>`; return; }
   if(level==="us"&&usView==="fiber"){
     const ap=((NAT_FIBER-8)/(84-8)*100).toFixed(1);
     el.innerHTML=`<div style="flex:1;min-width:260px;max-width:520px"><div class="leg-title">Fiber internet availability (% of households)</div>
@@ -669,13 +668,12 @@ function renderLegend(){
         <div><span class="sw" style="background:#be64ac"></span><b>Low fiber · high crime</b></div>
       </div></div>`;
   }else if(coView==="gig"||coView==="fiberAny"){
-    const isGig=coView==="gig", avg=isGig?WV_GIG_AVG:WV_ANY_AVG, ap=(avg/95*100).toFixed(1);
-    el.innerHTML=`<div style="flex:1;min-width:260px;max-width:540px"><div class="leg-title">${isGig?'Gigabit (≥1 Gbps) fiber':'Any fiber'} availability — est. % of homes · FCC Dec 2025</div>
+    const isGig=coView==="gig";
+    el.innerHTML=`<div style="flex:1;min-width:260px;max-width:540px"><div class="leg-title">${isGig?'Gigabit (≥1 Gbps) fiber':'Any fiber'} availability — % of homes · FCC official, Dec 2025</div>
       <div class="bar" style="background:${grad(fiberCoColor,0,95)}"></div>
       <div class="bar-labels"><span class="t" style="left:0">0%</span>
-      <span class="t" style="left:${ap}%"><span class="tick"></span>${avg}%<b>WV est.</b></span>
       <span class="t" style="left:100%">95%</span></div>
-      <div class="leg-note">Estimate = FCC fiber-serviceable homes ÷ Census housing units. Translucent county = no data.</div></div>`;
+      <div class="leg-note">FCC Broadband Data Collection — residential fiber-to-the-premises availability by county. Translucent county = no fiber reported.</div></div>`;
   }else if(coView==="bb"){
     const ap=((WV_BB_AVG-55)/(86-55)*100).toFixed(1);
     el.innerHTML=`<div style="flex:1;min-width:260px;max-width:520px"><div class="leg-title">Broadband adoption — % of households subscribing to any internet (Census ACS)</div>
@@ -697,7 +695,6 @@ function renderLegend(){
 function chips(a){return a.map(n=>`<span class="chip">${n}</span>`).join("");}
 function renderCallouts(){
   const el=document.getElementById("callouts");
-  if(level==="county"&&currentFips!=="54"){ el.innerHTML=`<div class="callout"><h3>No county data yet</h3><p>${currentName} isn't wired up for drill-down. West Virginia is the loaded example — ask me to add ${currentName}.</p></div>`; return; }
   if(level==="us"){
     const best=[],worst=[];
     for(const [n,d] of Object.entries(DATA)){
@@ -710,31 +707,27 @@ function renderCallouts(){
       <div class="callout"><h3><span class="dot" style="background:#be64ac"></span>Tough combo — limited fiber, high crime</h3>
       <p>Fiber under 45% of households and crime above 125% of the US average.</p><div class="chips">${chips(worst)}</div></div>`;
   }else{
-    const ranked=wvRows.filter(r=>r.gigPct!=null).sort((a,b)=>b.gigPct-a.gigPct);
+    const ranked=coRows.filter(r=>r.gigPct!=null).sort((a,b)=>b.gigPct-a.gigPct);
+    if(!ranked.length){ el.innerHTML=`<div class="callout"><h3>No FCC fiber data</h3><p>No county fiber data for ${escapeHtml(currentName)}.</p></div>`; return; }
     const top=ranked.slice(0,5).map(r=>r.name+" ("+Math.round(r.gigPct)+"%)");
     const bot=ranked.slice(-5).reverse().map(r=>r.name+" ("+Math.round(r.gigPct)+"%)");
-    el.innerHTML=`<div class="callout"><h3><span class="dot" style="background:${fiberCoColor(80)}"></span>Most gigabit fiber</h3>
-      <p>Highest estimated share of homes that can buy 1 Gbps fiber — often small rural telephone co-ops.</p><div class="chips">${chips(top)}</div></div>
-      <div class="callout"><h3><span class="dot" style="background:${fiberCoColor(6)}"></span>Fiber deserts</h3>
-      <p>Almost no gigabit fiber for sale — the rural connectivity gap, mostly along the ridges.</p><div class="chips">${chips(bot)}</div></div>`;
+    el.innerHTML=`<div class="callout"><h3><span class="dot" style="background:${fiberCoColor(80)}"></span>Most gigabit fiber — ${escapeHtml(currentName)}</h3>
+      <p>Counties with the highest gigabit-fiber availability.</p><div class="chips">${chips(top)}</div></div>
+      <div class="callout"><h3><span class="dot" style="background:${fiberCoColor(6)}"></span>Fiber deserts — ${escapeHtml(currentName)}</h3>
+      <p>Lowest gigabit-fiber availability — the rural connectivity gap.</p><div class="chips">${chips(bot)}</div></div>`;
   }
 }
 
 /* ===================== TABLE ===================== */
 function renderTable(){
   const isUS=level==="us";
-  if(level==="county"&&currentFips!=="54"){
-    document.getElementById("tblSummary").textContent=currentName+" — no county data loaded";
-    document.getElementById("dataTable").innerHTML="<tbody><tr><td style='color:var(--muted);padding:14px 10px'>County-level data isn't loaded for "+currentName+" yet. West Virginia is the example dataset.</td></tr></tbody>";
-    return;
-  }
   document.getElementById("tblSummary").textContent = isUS
     ? "Full data table — 50 states + DC (click headers to sort)"
-    : currentName+" counties — fiber availability, adoption & crime (click headers to sort)";
+    : currentName+" counties — fiber availability by county (click headers to sort)";
   const cols = isUS
     ? [["name","State"],["fiber","Fiber %"],["crime","Crime /100k"],["ratio","vs US avg"]]
     : [["name","County"],["gigPct","Gigabit %"],["anyPct","Any fiber %"],["bb","Adoption %"],["crime","Crime /100k"]];
-  const base = isUS?usRows:wvRows;
+  const base = isUS?usRows:coRows;
   const f=filter.trim().toLowerCase();
   const rows=base.filter(r=>r.name.toLowerCase().includes(f)).sort((a,b)=>{
     if(sortKey==="name") return sortDir*a.name.localeCompare(b.name);
@@ -770,7 +763,7 @@ function renderTable(){
 document.getElementById("footer").innerHTML=`<strong>Sources &amp; notes.</strong>
   <b>Basemap &amp; elevation</b> — USGS Topo (The National Map) with contour elevations, plus Esri hillshade/relief, OpenTopoMap, CARTO (switch on the map). Spot &amp; per-county elevations from the Open-Meteo Elevation API (Copernicus 90&nbsp;m DEM).
   <b>State layer</b> — violent crime: FBI 2024 (US avg 359.1 /100k); fiber availability: Reviews.org (US avg ≈52%).
-  <b>County fiber (WV)</b> — FCC Broadband Data Collection, Dec 2025 (residential FTTP locations; gigabit = ≥1000 Mbps down) ÷ Census housing units (2018); an estimate that runs a few points below FCC's official location-based %.
+  <b>County fiber (all states)</b> — FCC Broadband Data Collection, Dec 2025: official residential fiber-to-the-premises availability % by county (any fiber, and gigabit = ≥1000/100 Mbps), from the nationwide Summary-by-Geography file.
   <b>County adoption</b> — Census ACS via IndexMundi (any-broadband subscription, 2014–2018). <b>County crime</b> — FBI UCR via PlainCrime (8 of 55 counties).
   Outlines: U.S. Census via the us-atlas project. Address search: U.S. Census Geocoder (rural-friendly, returns the 2020 census block) with Photon autocomplete and Nominatim fallback; the per-address line shows the FCC fiber status for that exact census block (companion file <code>wv_blocks.js</code>).`;
 
