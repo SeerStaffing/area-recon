@@ -515,6 +515,33 @@ function censusGeocode(q){
   });
 }
 async function nominatimGeo(q){ try{const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q="+encodeURIComponent(q));const j=await r.json();return j&&j[0]?{lat:+j[0].lat,lon:+j[0].lon,matched:j[0].display_name}:null;}catch(e){return null;} }
+/* ---- statewide E-911 address-point geocoders: rural-complete where the Census/OSM geocoders miss
+   (E-911 gives every structure an address). Esri ArcGIS GeocodeServers, called by JSONP (callback=) so
+   they work from this static page, exactly like the Census geocoder. Extend coverage by adding a state's
+   findAddressCandidates base URL to STATE_GEO. ---- */
+const US_STATES=new Set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC".split(" "));
+const STATE_GEO={
+  "WV":"https://services.wvgis.wvu.edu/arcgis/rest/services/Geocode/WV_Site/GeocodeServer",        // WV GIS Tech Center — statewide Site Address Points (E-911)
+  "OR":"https://navigator.state.or.us/arcgis/rest/services/Locators/OregonAddress/GeocodeServer"   // Oregon EIS/GEO — statewide address locator
+};
+function stateFromQuery(q){ const t=q.toUpperCase().split(/[^A-Z]+/).filter(Boolean); for(let i=t.length-1;i>=0;i--){ if(t[i].length===2&&US_STATES.has(t[i])) return t[i]; } return null; }
+let __agi=0;
+function arcgisGeocode(baseUrl,q){
+  return new Promise(res=>{
+    const cb="__ag"+(++__agi); let done=false;
+    const s=document.createElement("script");
+    function cleanup(){ try{delete window[cb];}catch(e){window[cb]=void 0;} if(s.parentNode) s.parentNode.removeChild(s); }
+    window[cb]=d=>{ done=true; cleanup();
+      const top=(d&&d.candidates&&d.candidates[0])||null;
+      res((top&&top.location&&top.score>=80) ? {lat:+top.location.y, lon:+top.location.x, matched:top.address} : null);
+    };
+    s.onerror=()=>{ if(!done){cleanup();res(null);} };
+    s.src=baseUrl+"/findAddressCandidates?SingleLine="+encodeURIComponent(q)+"&outSR=4326&maxLocations=1&f=json&callback="+cb;
+    document.head.appendChild(s);
+    setTimeout(()=>{ if(!done){cleanup();res(null);} },8000);
+  });
+}
+function stateGeocode(q){ const u=STATE_GEO[stateFromQuery(q)]; return u?arcgisGeocode(u,q):Promise.resolve(null); }
 function blockFiberHtml(block){
   if(!block||block.length<3) return "";
   const sets=blkSets(block.slice(0,2));
@@ -543,7 +570,11 @@ async function resolveAddress(query, coords){
   const c=await censusGeocode(q);
   if(c){ lat=c.lat; lon=c.lon; matched=c.matched; block=c.block||await fccBlock(lat,lon); }
   else if(coords){ lat=coords.lat; lon=coords.lon; matched=q; block=await fccBlock(lat,lon); }
-  else{ const nm=await nominatimGeo(q); if(nm){ lat=nm.lat; lon=nm.lon; matched=nm.matched; block=await fccBlock(lat,lon); } }
+  else{
+    const sg=await stateGeocode(q);                       // statewide E-911 address points (rural-complete; WV today)
+    if(sg){ lat=sg.lat; lon=sg.lon; matched=sg.matched; block=await fccBlock(lat,lon); }
+    else{ const nm=await nominatimGeo(q); if(nm){ lat=nm.lat; lon=nm.lon; matched=nm.matched; block=await fccBlock(lat,lon); } }
+  }
   if(lat==null){ addrMsg.textContent="No match — try “street, city, ST ZIP”."; return; }
   searchLayer.clearLayers();
   map.setView([lat,lon],15);
