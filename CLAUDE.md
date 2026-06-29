@@ -1,7 +1,7 @@
 # Area Recon — guide for a new agent
 
 > Read this first. It explains what the project is, how the code and data fit together,
-> what's done, and the one task that's still in progress. Self-contained — assumes no prior context.
+> and what's done (it's all shipped). Self-contained — assumes no prior context.
 
 ## What it is
 
@@ -29,8 +29,8 @@ state) over a national backdrop.
 No build. Needs internet at view time (CDN libs, map tiles, geo APIs).
 
 - Quickest: open `index.html` in a browser. *Caveat:* the WV exact-block lookup needs `wv_blocks.js`
-  beside it (it is). Some browsers block `file://` `fetch()`, which matters for the pending per-state
-  block loading — use a local server to be safe:
+  beside it (it is). The other 49 states load on demand from `blocks/<NN>.js`, which must be beside the
+  page — over `file://` you only get WV; use a local server or the hosted site for the full lookup:
 - Windows (no Node/Python needed): `powershell -ExecutionPolicy Bypass -File scripts\serve.ps1` → http://localhost:8123/
 - Anywhere: `python -m http.server 8123` or `npx serve`.
 - When verifying changes, load it and **check the browser console for errors**; exercise: US bivariate
@@ -42,7 +42,8 @@ No build. Needs internet at view time (CDN libs, map tiles, geo APIs).
 index.html            The entire app: HTML/CSS, all JS logic, and state-level data (DATA, WV).
 county_fiber.js       window.COUNTYFIBER = { "<fips5>": {g:gigabit%, a:anyFiber%} }  — all 3,232 counties.
 county_crime.js       window.COUNTYCRIME = { "<fips5>": violentCrimePer100k }         — ~3,041 counties.
-wv_blocks.js          window.WVBLK = { any:"<csv of 13-digit blocks>", nogig:"..." }  — WV exact-block fiber.
+wv_blocks.js          window.WVBLK = { any:"<csv of 13-digit blocks>", nogig:"..." }  — WV exact-block fiber (loaded upfront).
+blocks/<NN>.js        window.STATEBLK["<NN>"] = { any:"...", nogig:"..." }  — per-state exact-block fiber, loaded on demand.
 data/wv_fiber_counts.csv   Intermediate (per-county WV fiber counts). Not used at runtime.
 scripts/serve.ps1     Minimal local static server (Windows).
 scripts/build_*.ps1   Regenerate the companion data files from source downloads (see Data pipeline).
@@ -59,7 +60,7 @@ CLAUDE.md             This file.
 | **County fiber** gigabit + any (county view) | **FCC BDC, Dec 2025** | `COUNTYFIBER` (county_fiber.js) | all counties | **Official** residential FTTP availability %. gig = ≥1000/100 Mbps. |
 | **County violent crime** (county view) | hybrid | `COUNTYCRIME` (crime.js) + `WV` recent | ~3,041 counties | **Newest where available** (FBI UCR via PlainCrime, e.g. WV's larger counties), else **County Health Rankings ~2009–2011** backfill. |
 | **County broadband adoption** (county view, **WV only**) | Census ACS 2014–18 | `WV[fips].bb` | WV 55 | households subscribing to *any* broadband (not fiber). |
-| **Exact census-block fiber** (address popup, **WV only**) | FCC BDC location file | `WVBLK` (wv_blocks.js) | WV blocks | yes/gig/no at the searched block. Other states show county-level fiber. |
+| **Exact census-block fiber** (address popup, **all 50 states**) | FCC BDC location file | `STATEBLK` (blocks/<NN>.js; WV via wv_blocks.js) | all states | yes/gig/no at the searched block; each state's file loads on demand. |
 | **Elevation** (labels + probe) | Open-Meteo (Copernicus DEM) | runtime fetch | everywhere | per-county centroid labels + click-to-probe. |
 | Geocoding | U.S. Census Geocoder (JSONP → 2020 block); Photon (autocomplete); Nominatim (fallback); geo.fcc.gov (block) | runtime | everywhere | Census geocoder handles rural addresses + returns the block. |
 | Basemaps | USGS Topo, OpenTopoMap, Esri hillshade/relief, CARTO | runtime tiles | — | switch via the map's layer control. |
@@ -90,7 +91,8 @@ Map flow:
 
 Address search (bottom of script): `suggest()` (Photon autocomplete), `resolveAddress()` →
 `censusGeocode()` (JSONP, returns coords + 2020 block) → popup with elevation, block fiber
-(`blockFiberHtml`, WV-only via `WVBLK`), and county stats (`countyFromBlockHtml`, all states).
+(`blockFiberHtml`, nationwide via `STATEBLK`; `ensureStateBlocks` loads each state's `blocks/<NN>.js` on
+demand, WV embedded), and county stats (`countyFromBlockHtml`, all states).
 
 ## Data pipeline (regenerating companion files)
 
@@ -111,27 +113,23 @@ a real browser and dropped in `~/Downloads`, then processed locally.
 
 **Done:** county fiber (all states, official FCC) · county crime (all states, hybrid) · per-county
 elevation + probe · topo basemaps + zoom-responsive fills · US bivariate + state/county drill-down ·
-address search (block-level fiber for WV, county-level elsewhere) · deployed to Pages.
+**exact-block fiber nationwide** (address search; WV embedded, the other 49 states load on demand from
+`blocks/<NN>.js`) · deployed to Pages.
 
-**In progress — exact-block fiber for all 50 states.** Right now only WV has it (`wv_blocks.js`,
-loaded upfront). The user is downloading each state's FCC "Fiber to the Premises" file. Once those zips
-are in `~/Downloads`, finish it as below.
+### DONE: exact-block fiber for all 50 states (wired Jun 2026)
 
-### TODO: wire exact-block fiber for the other states
+`scripts/build_state_blocks.ps1` processes every `bdc_<NN>_FibertothePremises_*.zip` in `~/Downloads`
+into `blocks/<NN>.js` (`window.STATEBLK["<NN>"]={any,nogig}`; block id = 15-digit GEOID minus the 2-digit
+state prefix). `index.html` loads a state's file on demand the first time an address there is searched:
+`ensureStateBlocks(fips)` injects `<script src="blocks/<NN>.js">` (a script tag, **not** `fetch`, so it
+also works from `file://`), then `blockFiberHtml` reads `STATEBLK[block.slice(0,2)]` through `blkSets`
+(string → `Set`, cached). WV stays embedded in `wv_blocks.js` (loaded upfront, folded into
+`STATEBLK["54"]`) so it still works on the `file://` working copy with no `blocks/` folder beside it; the
+hosted Pages site serves all 50. **To refresh:** re-download the state zips and re-run the script.
 
-1. Confirm the state zips are in `~/Downloads` named `bdc_<NN>_FibertothePremises_fixed_broadband_*.zip`
-   (`<NN>` = 2-digit state FIPS).
-2. Run `scripts/build_state_blocks.ps1` → writes `blocks/<NN>.js`, each setting
-   `window.STATEBLK["<NN>"] = { any:"<csv of 13-digit block ids>", nogig:"<...>" }` (block id = 15-digit
-   GEOID minus the 2-digit state prefix). (Optionally regenerate WV as `blocks/54.js` for consistency.)
-3. In `index.html`, add **on-demand loading**: when an address resolves (or a state is drilled), if that
-   state's blocks aren't loaded, inject `<script src="blocks/<NN>.js">` (use a `<script>` tag, **not**
-   `fetch` — script-src works from `file://` too), then run the lookup. Generalize `blockFiberHtml(block)`
-   so it reads `STATEBLK[block.slice(0,2)]` (and keep WV's `WVBLK` working, or migrate WV into `STATEBLK`).
-4. The block fiber set = "this census block has ≥1 residential fiber-serviceable location" (any), with a
-   `nogig` set for blocks that have fiber but not gigabit. That's the best address-level signal from the
-   public FCC data (not a guarantee at the exact parcel).
-5. Test on the **hosted** site (per-state files are fetched there); push.
+The block set = "≥1 residential (`biz_res` R/X) fiber-serviceable location in this block" (any), with
+`nogig` for blocks that have fiber but not gigabit (`max_advertised_download_speed` < 1000) — the best
+address-level signal from public FCC data, not a guarantee at the exact parcel.
 
 ### Other extension ideas
 - Widen the **recent** crime layer beyond WV (add a `RECENTCRIME` object `{fips:rate}`; `crimeOf` already

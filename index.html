@@ -502,9 +502,28 @@ labelBtn.addEventListener("click",()=>{
 const searchLayer=L.layerGroup().addTo(map);
 const addrInput=document.getElementById("addrSearch"), addrMsg=document.getElementById("addrMsg"), addrSug=document.getElementById("addrSug");
 const escapeHtml=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
-const FBLK=new Set((window.WVBLK&&WVBLK.any)?WVBLK.any.split(","):[]);
-const FNOGIG=new Set((window.WVBLK&&WVBLK.nogig)?WVBLK.nogig.split(","):[]);
-const HAVE_BLOCKS=!!(window.WVBLK&&WVBLK.any);
+/* ---- exact-block fiber: WV is embedded (wv_blocks.js); every other state loads on demand from blocks/<NN>.js ----
+   STATEBLK[fips]={any:"<csv of 13-digit block ids>",nogig:"<csv>"} (block id = 15-digit GEOID minus the 2-digit
+   state prefix). Loaded via a <script> tag, not fetch(), so it also works from file://. */
+const STATEBLK=(window.STATEBLK=window.STATEBLK||{});
+if(window.WVBLK&&WVBLK.any&&!STATEBLK["54"]) STATEBLK["54"]=WVBLK;   // fold WV's upfront file into the general store
+const blkSetCache={}, blkLoading={};
+function blkSets(fips){
+  if(blkSetCache[fips]) return blkSetCache[fips];
+  const d=STATEBLK[fips]; if(!d) return null;
+  return (blkSetCache[fips]={any:new Set(d.any?d.any.split(","):[]), nogig:new Set(d.nogig?d.nogig.split(","):[])});
+}
+function ensureStateBlocks(fips){
+  if(STATEBLK[fips]) return Promise.resolve(STATEBLK[fips]);
+  if(blkLoading[fips]) return blkLoading[fips];
+  return (blkLoading[fips]=new Promise(res=>{
+    const s=document.createElement("script");
+    s.src="blocks/"+fips+".js";
+    s.onload=()=>res(STATEBLK[fips]||null);
+    s.onerror=()=>res(null);            // no per-state file (file://, or state not built) -> county-level fallback
+    document.head.appendChild(s);
+  }));
+}
 async function fetchElevFt(lat,lon){ try{const r=await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${(+lat).toFixed(5)}&longitude=${(+lon).toFixed(5)}`);const j=await r.json();const m=(j&&j.elevation&&j.elevation.length)?j.elevation[0]:null;return m==null?null:feet(m);}catch(e){return null;} }
 async function fccBlock(lat,lon){ try{const r=await fetch(`https://geo.fcc.gov/api/census/block/find?latitude=${lat}&longitude=${lon}&censusYear=2020&format=json`);const j=await r.json();return (j&&j.Block&&j.Block.FIPS)||null;}catch(e){return null;} }
 let __cgi=0;
@@ -527,10 +546,10 @@ function censusGeocode(q){
 }
 async function nominatimGeo(q){ try{const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q="+encodeURIComponent(q));const j=await r.json();return j&&j[0]?{lat:+j[0].lat,lon:+j[0].lon,matched:j[0].display_name}:null;}catch(e){return null;} }
 function blockFiberHtml(block){
-  if(!block) return "";
-  if(block.slice(0,2)!=="54") return `<div class="ap-row">Census block: <b>${block}</b></div><div class="ap-note">FCC block-fiber data is loaded for West Virginia only.</div>`;
-  if(!HAVE_BLOCKS) return `<div class="ap-row">Census block: <b>${block}</b></div><div class="ap-note">Block-level file (wv_blocks.js) not loaded — keep it beside this page.</div>`;
-  const k=block.slice(2), any=FBLK.has(k), gig=any&&!FNOGIG.has(k);
+  if(!block||block.length<3) return "";
+  const sets=blkSets(block.slice(0,2));
+  if(!sets) return `<div class="ap-row">Census block: <b>${block}</b></div><div class="ap-note">No block-level fiber file for this state — county-level fiber is shown below.</div>`;
+  const k=block.slice(2), any=sets.any.has(k), gig=any&&!sets.nogig.has(k);
   const status= any ? (gig?'<b style="color:#0f766e">Yes — gigabit fiber</b>':'<b style="color:#b45309">Yes — fiber (sub-gigabit)</b>') : '<b style="color:#b91c1c">No fiber reported</b>';
   return `<div class="ap-sub">This census block — FCC fiber (Dec 2025)</div>
     <div class="ap-row">Block: <b>${block}</b></div>
@@ -559,6 +578,7 @@ async function resolveAddress(query, coords){
   searchLayer.clearLayers();
   map.setView([lat,lon],15);
   const mk=L.marker([lat,lon],{icon:L.divIcon({className:"addr-pin",html:"📍",iconSize:[24,24],iconAnchor:[12,24],popupAnchor:[0,-22]})}).addTo(searchLayer);
+  if(block) await ensureStateBlocks(block.slice(0,2));   // pull this state's block-fiber file (if built) before rendering the popup
   const html=`<div class="addr-pop"><b>${escapeHtml(matched||q)}</b>`+
     `<div class="ap-row" id="addr-elev">Elevation: …</div>`+
     blockFiberHtml(block)+countyFromBlockHtml(block)+`</div>`;
@@ -638,7 +658,7 @@ function updateHeader(){
     if(currentFips==="54"){
       B.innerHTML="Showing <b>West Virginia</b> — fiber is <b>official FCC</b> residential availability by county (Dec 2025), gigabit and any-fiber. <b>Violent crime</b> is FBI UCR (recent for WV's larger counties, older fill elsewhere); <b>broadband adoption</b> is Census (WV). The <b>address search resolves to the exact census block</b>. Notice how the fiber gaps track the Appalachian ridgelines.";
     }else{
-      B.innerHTML="Showing <b>"+escapeHtml(currentName)+"</b> — county <b>fiber availability</b> (FCC, Dec 2025) and <b>violent crime</b> (FBI UCR / County Health Rankings), plus per-county elevation. <b>Broadband adoption and exact-block address lookup are West Virginia-only</b>; for an address here the popup shows county-level fiber + crime.";
+      B.innerHTML="Showing <b>"+escapeHtml(currentName)+"</b> — county <b>fiber availability</b> (FCC, Dec 2025) and <b>violent crime</b> (FBI UCR / County Health Rankings), plus per-county elevation. <b>Search any address for exact-block FCC fiber</b> (now nationwide); broadband adoption stays West Virginia-only.";
     }
   }
 }
@@ -772,7 +792,7 @@ document.getElementById("footer").innerHTML=`<strong>Sources &amp; notes.</stron
   <b>State layer</b> — violent crime: FBI 2024 (US avg 359.1 /100k); fiber availability: Reviews.org (US avg ≈52%).
   <b>County fiber (all states)</b> — FCC Broadband Data Collection, Dec 2025: official residential fiber-to-the-premises availability % by county (any fiber, and gigabit = ≥1000/100 Mbps), from the nationwide Summary-by-Geography file.
   <b>County crime (all states)</b> — FBI UCR: newest figures where available (via PlainCrime, e.g. WV's larger counties), backfilled with County Health Rankings (~2009–2011) elsewhere. <b>County adoption (WV)</b> — Census ACS via IndexMundi (any-broadband subscription, 2014–2018).
-  Outlines: U.S. Census via the us-atlas project. Address search: U.S. Census Geocoder (rural-friendly, returns the 2020 census block) with Photon autocomplete and Nominatim fallback; the per-address line shows the FCC fiber status for that exact census block (companion file <code>wv_blocks.js</code>).`;
+  Outlines: U.S. Census via the us-atlas project. Address search: U.S. Census Geocoder (rural-friendly, returns the 2020 census block) with Photon autocomplete and Nominatim fallback; the per-address line shows the FCC fiber status for that exact census block — nationwide, from per-state files in <code>blocks/</code> (West Virginia embedded in <code>wv_blocks.js</code>).`;
 
 /* ===================== RENDER ALL ===================== */
 function renderAll(){ renderControls(); updateHeader(); renderLegend(); renderCallouts(); renderTable(); }
