@@ -548,16 +548,13 @@ async function resolveAddress(query, coords){
   const mk=L.marker([lat,lon],{icon:L.divIcon({className:"addr-pin",html:"📍",iconSize:[24,24],iconAnchor:[12,24],popupAnchor:[0,-22]})}).addTo(searchLayer);
   const elevP=fetchElevFt(lat,lon);                      // start elevation now — concurrent with the block-file load, not blocked by it
   if(block) await ensureStateBlocks(block.slice(0,2));   // pull this state's block-fiber file (if built) before rendering the popup
-  const html=`<div class="addr-pop"><b>${escapeHtml(matched||q)}</b>`+
-    `<div class="ap-row" id="addr-elev">Elevation: …</div>`+
-    blockFiberHtml(block)+countyFromBlockHtml(block)+`</div>`;
-  mk.bindPopup(html,{maxWidth:300}).openPopup();
+  const staticRows=blockFiberHtml(block)+countyFromBlockHtml(block);
+  const popHtml=elev=>`<div class="addr-pop"><b>${escapeHtml(matched||q)}</b>`+
+    `<div class="ap-row">Elevation: ${elev}</div>`+staticRows+`</div>`;
+  mk.bindPopup(popHtml("…"),{maxWidth:300}).openPopup();
   addrMsg.textContent="";
-  elevP.then(ft=>{                                        // update THIS popup's elevation row (robust against stale ids / re-renders)
-    const node=mk.getPopup&&mk.getPopup()&&mk.getPopup().getElement();
-    const el=(node&&node.querySelector("#addr-elev"))||document.getElementById("addr-elev");
-    if(el) el.textContent="Elevation: "+(ft==null?"n/a":ft.toLocaleString()+" ft");
-  });
+  // bake the result into the popup's STORED content (not just the live DOM) so it survives close/reopen
+  elevP.then(ft=>mk.setPopupContent(popHtml(ft==null?"n/a":ft.toLocaleString()+" ft")));
 }
 /* ---- autocomplete (Photon, debounced) ---- */
 let sugItems=[], sugIdx=-1, sugTimer=null;
