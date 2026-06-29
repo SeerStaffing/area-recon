@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>US Map — Fiber & Violent Crime on a topographic basemap</title>
+<title>Area Recon — fiber, violent crime &amp; terrain (with address search)</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
@@ -14,6 +14,7 @@
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
        background:var(--bg);color:var(--ink);line-height:1.45}
   .wrap{max-width:1040px;margin:0 auto;padding:26px 20px 70px}
+  .brand{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin:0 0 4px}
   header h1{font-size:23px;margin:0 0 6px;letter-spacing:-.01em}
   header p.sub{margin:0;color:var(--muted);font-size:14px}
   .controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin:22px 0 0}
@@ -110,6 +111,7 @@
 <body>
 <div class="wrap">
   <header>
+    <div class="brand">Area Recon</div>
     <h1 id="pageTitle">United States — Fiber &amp; Violent Crime</h1>
     <p class="sub" id="pageSub">Choropleth over a topographic basemap. Click a state to drill into counties.</p>
   </header>
