@@ -321,7 +321,7 @@ const baseLayers={
   "Plain (light)": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",{maxZoom:19,subdomains:"abcd",attribution:"&copy; OpenStreetMap, &copy; CARTO"})
 };
 baseLayers["USGS Topo (contours)"].addTo(map);   // real USGS topo: contour lines + elevation labels appear as you zoom in
-L.control.layers(baseLayers,null,{position:"topright",collapsed:false}).addTo(map);
+L.control.layers(baseLayers,null,{position:"topright",collapsed:true}).addTo(map);
 
 /* ---- elevation tools (USGS topo shows contour numbers; these add explicit values) ---- */
 const elevLayer=L.layerGroup().addTo(map);   // click-to-probe spot heights
@@ -352,11 +352,20 @@ async function addCountyLabels(layer){
   }catch(e){}
 }
 
-/* ---- style helpers (semi-transparent so terrain shows through) ---- */
+/* ---- style helpers: fills fade as you zoom in so the topo shows through; borders strengthen so county lines stay visible ---- */
+function fillOpacityForZoom(has){
+  if(!has) return 0.10;                              // no data -> nearly clear (terrain shows; signals "no data")
+  const t=Math.max(0,Math.min(1,(map.getZoom()-7)/6));
+  return 0.72 - t*0.47;                              // 0.72 at z<=7 (overview: colors read) -> 0.25 at z>=13 (zoomed in: topo shows)
+}
+function borderForZoom(){
+  const t=Math.max(0,Math.min(1,(map.getZoom()-7)/6));
+  return {color:"#3b4252", weight:0.6+t*1.7, opacity:0.9};  // thicker/darker as you zoom in -> always see when you cross a county line
+}
 function styleUS(f){
-  const name=f.properties.name, has=!!DATA[name];
-  return {fillColor: has?colorFor(name,usView):NODATA, fillOpacity: has?0.66:0.12,
-          color:"#ffffff", weight:0.8, opacity:1};
+  const name=f.properties.name, has=!!DATA[name], b=borderForZoom();
+  return {fillColor: has?colorFor(name,usView):NODATA, fillOpacity: fillOpacityForZoom(has),
+          color:b.color, weight:b.weight, opacity:b.opacity};
 }
 function countyCell(fips){
   let c=NODATA, has=false;
@@ -367,8 +376,8 @@ function countyCell(fips){
   return {c,has};
 }
 function styleCounty(f){
-  const {c,has}=countyCell(String(f.id));
-  return {fillColor:c, fillOpacity: has?0.7:0.1, color:"#ffffff", weight:0.7, opacity:1};
+  const {c,has}=countyCell(String(f.id)), b=borderForZoom();
+  return {fillColor:c, fillOpacity: fillOpacityForZoom(has), color:b.color, weight:b.weight, opacity:b.opacity};
 }
 function hl(layer){ if(layer){ layer.setStyle({weight:2.6,color:"#0b1220"}); layer.bringToFront(); } }
 function unhl(layer){ if(layer&&dataLayer) dataLayer.resetStyle(layer); }
@@ -427,6 +436,7 @@ function backToUS(){
 }
 function recolorUS(){ if(dataLayer) dataLayer.setStyle(styleUS); }
 function recolorCounties(){ if(dataLayer) dataLayer.setStyle(styleCounty); }
+map.on("zoomend",()=>{ if(dataLayer) dataLayer.setStyle(level==="us"?styleUS:styleCounty); });
 
 /* ===================== TOOLTIP ===================== */
 const row=(k,v,big)=>`<div class="row"><span class="k">${k}</span><span class="${big?'big':''}">${v}</span></div>`;
