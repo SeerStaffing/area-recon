@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>US Map — Fiber & Violent Crime on a topographic basemap</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#161b26; --muted:#6b7280; --line:#e6e8ec;
+    --accent:#2563eb; --good:#0f766e; --bad:#b91c1c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.45}
+  .wrap{max-width:1040px;margin:0 auto;padding:26px 20px 70px}
+  header h1{font-size:23px;margin:0 0 6px;letter-spacing:-.01em}
+  header p.sub{margin:0;color:var(--muted);font-size:14px}
+  .controls{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin:22px 0 0}
+  .seg{display:inline-flex;flex-wrap:wrap;background:#eceef2;border-radius:11px;padding:4px;gap:2px}
+  .seg button{border:0;background:transparent;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;
+              color:var(--muted);cursor:pointer;transition:.12s}
+  .seg button.active{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.14)}
+  .seg button:hover:not(.active){color:var(--ink)}
+  .drill{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .drill select{padding:8px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:#fff;color:var(--ink)}
+  .back{border:1px solid var(--line);background:#fff;padding:9px 14px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
+  .back:hover{background:#f3f4f6}
+  .rightctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .elev-tip{background:#0b1220!important;color:#ffd166!important;border:none!important;border-radius:6px;
+            padding:2px 7px;font-size:12px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  .elev-tip.leaflet-tooltip-top:before{border-top-color:#0b1220!important}
+  .elev-lab{font-size:11px;font-weight:700;color:#15212e;text-align:center;white-space:nowrap;
+            text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff;pointer-events:none}
+  .addrbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 8px}
+  .addr-wrap{position:relative;flex:1;min-width:240px}
+  .addr-input{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;outline:none}
+  .addr-input:focus{border-color:var(--accent)}
+  .addrsug{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 10px 26px rgba(0,0,0,.14);z-index:1300;max-height:244px;overflow:auto}
+  .sug-item{padding:8px 11px;font-size:13px;cursor:pointer;border-bottom:1px solid #f1f3f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sug-item:last-child{border-bottom:0}
+  .sug-item:hover,.sug-item.active{background:#eff6ff}
+  .addr-go{border:1px solid var(--accent);background:var(--accent);color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer}
+  .addr-go:hover{background:#1d4ed8}
+  .addr-msg{font-size:12px;color:var(--muted)}
+  .addr-pin{font-size:22px;line-height:22px;text-align:center;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))}
+  .addr-pop b{font-size:12.5px}
+  .addr-pop .ap-sub{font-weight:700;margin-top:6px}
+  .addr-pop .ap-row{font-size:12.5px;margin-top:2px}
+  .addr-pop .ap-note{font-size:11px;color:var(--muted);margin-top:5px}
+  #banner{margin:12px 0 0;font-size:12.5px;color:var(--muted);background:#fff;border:1px solid var(--line);
+          border-left:3px solid var(--accent);border-radius:8px;padding:10px 13px;display:none}
+  #banner.show{display:block}
+  #banner b{color:var(--ink)}
+  .map-area{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:8px;
+            box-shadow:0 1px 2px rgba(0,0,0,.04);margin-top:12px}
+  #map{height:560px;width:100%;border-radius:11px;background:#dfe6ec;z-index:0}
+  @media (max-width:680px){#map{height:440px}}
+  .leaflet-container{font:inherit}
+  #legend{padding:12px 6px 6px;display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
+  .leg-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+  .bar{height:14px;border-radius:7px;border:1px solid rgba(0,0,0,.06)}
+  .bar-labels{position:relative;height:34px;margin-top:4px;font-size:11.5px;color:var(--muted)}
+  .bar-labels .t{position:absolute;transform:translateX(-50%);text-align:center;white-space:nowrap}
+  .bar-labels .t b{display:block;color:var(--ink);font-size:11px}
+  .tick{position:absolute;top:-18px;width:0;border-left:1px dashed #9aa1ad;height:18px;transform:translateX(-.5px)}
+  .leg-note{font-size:11.5px;color:var(--muted);margin-top:3px;max-width:560px}
+  .bivwrap{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+  .bivgridbox{display:flex;align-items:stretch;gap:6px}
+  .ylab{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;color:var(--muted);text-align:center;font-weight:600}
+  .g3{display:grid;grid-template-columns:repeat(3,26px);grid-template-rows:repeat(3,26px);gap:2px}
+  .g3 i{display:block;border-radius:3px}
+  .xlab{font-size:11px;color:var(--muted);text-align:center;margin-top:5px;font-weight:600}
+  .bivnotes{font-size:12px;color:var(--ink);display:grid;gap:5px;align-content:center}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+  .callouts{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:18px 0 4px}
+  .callout{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 15px}
+  .callout h3{margin:0 0 4px;font-size:13px}
+  .callout p{margin:0 0 9px;font-size:12px;color:var(--muted)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:12px;padding:3px 9px;border-radius:999px;background:#f1f5f9;border:1px solid var(--line)}
+  details.tbl{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:6px 16px 14px}
+  summary{cursor:pointer;font-weight:600;font-size:14px;padding:10px 0}
+  .tbl-top{display:flex;justify-content:flex-end;margin:4px 0 6px}
+  .search{padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:13px;width:220px;outline:none}
+  .search:focus{border-color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{cursor:pointer;user-select:none;color:var(--muted);font-weight:600;white-space:nowrap}
+  th:hover{color:var(--ink)}
+  th .ar{font-size:9px;opacity:.6}
+  tbody tr:hover{background:#f8fafc}
+  .up{color:var(--bad);font-weight:600}
+  .dn{color:var(--good);font-weight:600}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px;vertical-align:0}
+  #tooltip{position:fixed;pointer-events:none;background:#0f1623;color:#fff;padding:11px 13px;border-radius:9px;
+           font-size:12.5px;opacity:0;transition:opacity .08s;max-width:270px;z-index:1200;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+  #tooltip h4{margin:0 0 6px;font-size:13.5px}
+  #tooltip .row{display:flex;justify-content:space-between;gap:16px;margin:2px 0}
+  #tooltip .k{color:#9aa3b2}
+  #tooltip .big{font-weight:700}
+  footer{margin-top:28px;color:var(--muted);font-size:12px;line-height:1.65}
+  footer a{color:var(--accent);text-decoration:none}
+  footer a:hover{text-decoration:underline}
+  .err{display:none;padding:14px;text-align:center;color:var(--bad);font-size:13px}
+  @media (max-width:680px){.callouts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="pageTitle">United States — Fiber &amp; Violent Crime</h1>
+    <p class="sub" id="pageSub">Choropleth over a topographic basemap. Click a state to drill into counties.</p>
+  </header>
+
+  <div class="controls">
+    <div class="seg" id="seg"></div>
+    <div class="rightctl">
+      <button id="labelBtn" class="back" type="button">🔢 Elevations: on</button>
+      <button id="elevBtn" class="back" type="button">⛰ Probe: off</button>
+      <span id="drillctl"></span>
+    </div>
+  </div>
+  <div id="banner"></div>
+
+  <div class="map-area">
+    <div class="addrbar">
+      <div class="addr-wrap">
+        <input id="addrSearch" class="addr-input" type="text" autocomplete="off" placeholder="🔍 Find a home address…  e.g., 401 Charles Way, Purgitsville, WV 26852">
+        <div id="addrSug" class="addrsug"></div>
+      </div>
+      <button id="addrBtn" class="addr-go" type="button">Search</button>
+      <span id="addrMsg" class="addr-msg"></span>
+    </div>
+    <div id="map"></div>
+    <div class="err" id="err">Couldn't load the map (needs internet for terrain tiles &amp; outlines). Reconnect and refresh.</div>
+    <div id="legend"></div>
+  </div>
+
+  <div class="callouts" id="callouts"></div>
+
+  <details class="tbl" id="tableWrap" open>
+    <summary id="tblSummary">Full data table</summary>
+    <div class="tbl-top"><input class="search" id="search" placeholder="Filter…"></div>
+    <table id="dataTable"></table>
+  </details>
+
+  <footer id="footer"></footer>
+</div>
+
+<div id="tooltip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="wv_blocks.js"></script>
+<script>
+/* ===================== DATA ===================== */
+const NAT_CRIME = 359.1;   // US violent crime rate /100k (FBI 2024)
+const NAT_FIBER = 52.0;    // US fiber availability avg, %
+
+// ---- State level: fiber availability % + violent crime /100k ----
+const DATA = {
+  "Alabama":{fiber:52.67,crime:359.9}, "Alaska":{fiber:13.32,crime:724.1},
+  "Arizona":{fiber:27.75,crime:421.9}, "Arkansas":{fiber:58.31,crime:579.4},
+  "California":{fiber:36.81,crime:486.0}, "Colorado":{fiber:47.10,crime:476.3},
+  "Connecticut":{fiber:67.88,crime:136.0}, "Delaware":{fiber:52.72,crime:360.8},
+  "District of Columbia":{fiber:59.99,crime:1005.5}, "Florida":{fiber:52.78,crime:267.1},
+  "Georgia":{fiber:62.10,crime:325.7}, "Hawaii":{fiber:58.36,crime:217.7},
+  "Idaho":{fiber:42.20,crime:230.6}, "Illinois":{fiber:37.28,crime:289.2},
+  "Indiana":{fiber:57.79,crime:312.9}, "Iowa":{fiber:66.43,crime:243.3},
+  "Kansas":{fiber:72.45,crime:438.7}, "Kentucky":{fiber:62.48,crime:213.1},
+  "Louisiana":{fiber:46.27,crime:519.8}, "Maine":{fiber:52.51,crime:100.1},
+  "Maryland":{fiber:61.05,crime:420.4}, "Massachusetts":{fiber:47.94,crime:314.7},
+  "Michigan":{fiber:31.07,crime:434.3}, "Minnesota":{fiber:50.49,crime:256.6},
+  "Mississippi":{fiber:61.44,crime:210.5}, "Missouri":{fiber:60.28,crime:462.0},
+  "Montana":{fiber:35.27,crime:423.5}, "Nebraska":{fiber:74.03,crime:220.5},
+  "Nevada":{fiber:31.85,crime:402.0}, "New Hampshire":{fiber:58.32,crime:110.1},
+  "New Jersey":{fiber:64.97,crime:217.7}, "New Mexico":{fiber:23.14,crime:717.1},
+  "New York":{fiber:66.65,crime:380.2}, "North Carolina":{fiber:52.60,crime:375.8},
+  "North Dakota":{fiber:67.13,crime:254.3}, "Ohio":{fiber:46.22,crime:293.7},
+  "Oklahoma":{fiber:58.57,crime:422.8}, "Oregon":{fiber:49.21,crime:331.0},
+  "Pennsylvania":{fiber:55.38,crime:245.6}, "Rhode Island":{fiber:81.32,crime:153.6},
+  "South Carolina":{fiber:54.16,crime:436.7}, "South Dakota":{fiber:56.95,crime:362.3},
+  "Tennessee":{fiber:68.19,crime:592.3}, "Texas":{fiber:58.70,crime:389.4},
+  "Utah":{fiber:65.87,crime:229.6}, "Vermont":{fiber:53.18,crime:219.1},
+  "Virginia":{fiber:60.63,crime:217.9}, "Washington":{fiber:35.75,crime:326.1},
+  "West Virginia":{fiber:35.23,crime:248.8}, "Wisconsin":{fiber:44.47,crime:278.5},
+  "Wyoming":{fiber:43.67,crime:203.4}
+};
+
+// ---- County level (West Virginia), keyed by 5-digit county FIPS ----
+const WV = {
+  "54001":{name:"Barbour",bb:67.9}, "54003":{name:"Berkeley",bb:81.1,crime:91.7},
+  "54005":{name:"Boone",bb:73.3}, "54007":{name:"Braxton",bb:64.4},
+  "54009":{name:"Brooke",bb:70.6}, "54011":{name:"Cabell",bb:69.6,crime:55.1},
+  "54013":{name:"Calhoun",bb:63.9}, "54015":{name:"Clay",bb:67.6},
+  "54017":{name:"Doddridge",bb:64.8}, "54019":{name:"Fayette",bb:71.3},
+  "54021":{name:"Gilmer",bb:64.4}, "54023":{name:"Grant",bb:68.4},
+  "54025":{name:"Greenbrier",bb:70.3}, "54027":{name:"Hampshire",bb:61.7},
+  "54029":{name:"Hancock",bb:72.3}, "54031":{name:"Hardy",bb:75.7},
+  "54033":{name:"Harrison",bb:75.5,crime:53.1}, "54035":{name:"Jackson",bb:65.8},
+  "54037":{name:"Jefferson",bb:82.7}, "54039":{name:"Kanawha",bb:76.0,crime:151.0},
+  "54041":{name:"Lewis",bb:68.5}, "54043":{name:"Lincoln",bb:70.5},
+  "54045":{name:"Logan",bb:76.6}, "54047":{name:"McDowell",bb:62.1},
+  "54049":{name:"Marion",bb:78.0}, "54051":{name:"Marshall",bb:70.5},
+  "54053":{name:"Mason",bb:65.8}, "54055":{name:"Mercer",bb:67.6,crime:132.4},
+  "54057":{name:"Mineral",bb:70.1}, "54059":{name:"Mingo",bb:68.1},
+  "54061":{name:"Monongalia",bb:83.4,crime:44.4}, "54063":{name:"Monroe",bb:64.5},
+  "54065":{name:"Morgan",bb:75.1}, "54067":{name:"Nicholas",bb:73.6},
+  "54069":{name:"Ohio",bb:68.9}, "54071":{name:"Pendleton",bb:59.2},
+  "54073":{name:"Pleasants",bb:73.5}, "54075":{name:"Pocahontas",bb:70.4},
+  "54077":{name:"Preston",bb:75.0}, "54079":{name:"Putnam",bb:74.2},
+  "54081":{name:"Raleigh",bb:74.2,crime:170.3}, "54083":{name:"Randolph",bb:66.4},
+  "54085":{name:"Ritchie",bb:67.7}, "54087":{name:"Roane",bb:64.1},
+  "54089":{name:"Summers",bb:58.8}, "54091":{name:"Taylor",bb:75.5},
+  "54093":{name:"Tucker",bb:73.7}, "54095":{name:"Tyler",bb:68.6},
+  "54097":{name:"Upshur",bb:70.1}, "54099":{name:"Wayne",bb:61.6},
+  "54101":{name:"Webster",bb:64.8}, "54103":{name:"Wetzel",bb:68.8},
+  "54105":{name:"Wirt",bb:67.3}, "54107":{name:"Wood",bb:77.8,crime:62.9},
+  "54109":{name:"Wyoming",bb:69.1}
+};
+const WV_BB_AVG = 72.9;
+
+// ---- County FIBER availability (WV), FCC Broadband Data Collection, Dec 2025 ----
+// any/gig = distinct residential FTTP locations (gig = >=1000 Mbps down); hu = Census housing units
+const WVF = {
+  "54001":{any:1946,gig:1946,hu:7923},   "54003":{any:25107,gig:25107,hu:49425},
+  "54005":{any:4370,gig:4370,hu:11166},  "54007":{any:18,gig:18,hu:7427},
+  "54009":{any:3266,gig:2648,hu:10798},  "54011":{any:21302,gig:21302,hu:46327},
+  "54013":{any:976,gig:976,hu:3994},     "54015":{any:1090,gig:1090,hu:4629},
+  "54017":{any:2913,gig:2913,hu:3908},   "54019":{any:2666,gig:2666,hu:21518},
+  "54021":{any:3023,gig:3023,hu:3569},   "54023":{any:3179,gig:3179,hu:6724},
+  "54025":{any:6271,gig:6271,hu:19376},  "54027":{any:10864,gig:10864,hu:14079},
+  "54029":{any:5345,gig:5345,hu:14332},  "54031":{any:7740,gig:7740,hu:8357},
+  "54033":{any:21382,gig:21382,hu:31769},"54035":{any:7656,gig:7656,hu:13433},
+  "54037":{any:8714,gig:8589,hu:23418},  "54039":{any:25315,gig:25315,hu:92333},
+  "54041":{any:3891,gig:3891,hu:7960},   "54043":{any:1590,gig:1590,hu:9949},
+  "54045":{any:4605,gig:4605,hu:16875},  "54047":{any:10051,gig:10051,hu:11173},
+  "54049":{any:11660,gig:11660,hu:26437},"54051":{any:4095,gig:4095,hu:15734},
+  "54053":{any:6884,gig:6884,hu:13089},  "54055":{any:17094,gig:17094,hu:30013},
+  "54057":{any:2212,gig:2212,hu:13151},  "54059":{any:1555,gig:1555,hu:12843},
+  "54061":{any:21609,gig:21609,hu:45074},"54063":{any:1,gig:1,hu:7657},
+  "54065":{any:5334,gig:5334,hu:10015},  "54067":{any:4245,gig:4245,hu:13170},
+  "54069":{any:6249,gig:6121,hu:20912},  "54071":{any:3432,gig:229,hu:5218},
+  "54073":{any:429,gig:429,hu:3404},     "54075":{any:3815,gig:2699,hu:8940},
+  "54077":{any:10288,gig:10288,hu:15175},"54079":{any:16107,gig:16107,hu:24249},
+  "54081":{any:15757,gig:15757,hu:36172},"54083":{any:10562,gig:10562,hu:14248},
+  "54085":{any:4466,gig:4466,hu:5901},   "54087":{any:364,gig:364,hu:7437},
+  "54089":{any:1451,gig:1451,hu:7712},   "54091":{any:4281,gig:4281,hu:7535},
+  "54093":{any:1240,gig:1240,hu:5366},   "54095":{any:1859,gig:1859,hu:5019},
+  "54097":{any:5361,gig:5361,hu:11428},  "54099":{any:4394,gig:4394,hu:19289},
+  "54101":{any:1230,gig:1230,hu:5448},   "54103":{any:3888,gig:3888,hu:8175},
+  "54105":{any:1091,gig:1091,hu:3332},   "54107":{any:19513,gig:19513,hu:40286},
+  "54109":{any:993,gig:993,hu:10887}
+};
+const WV_GIG_AVG = 41.3, WV_ANY_AVG = 41.9;
+
+/* ===================== COLORS ===================== */
+const fiberClass = f => f < 45 ? 0 : (f <= 60 ? 1 : 2);
+const crimeClass = c => { const r=c/NAT_CRIME; return r<0.75?0:(r<=1.25?1:2); };
+const BIV = [
+  ["#e8e8e8","#ace4e4","#5ac8c8"],
+  ["#dfb0d6","#a5add3","#5698b9"],
+  ["#be64ac","#8c62aa","#3b4994"]
+];
+const fiberColor  = d3.scaleSequential(d3.interpolateBlues).domain([8,84]);
+const crimeColor  = d3.scaleDiverging(d3.interpolateRdBu).domain([2.9,1.0,0.25]);
+const bbColor     = d3.scaleSequential(d3.interpolateBlues).domain([55,86]);
+const coCrimeCol  = d3.scaleSequential(d3.interpolateOrRd).domain([35,185]);
+const fiberCoColor= d3.scaleSequential(d3.interpolateBuGn).domain([0,95]);
+const NODATA = "#9aa3af";
+
+const coPct = (f,key) => (f&&f.hu) ? f[key]/f.hu*100 : null;
+function colorFor(name, view){
+  const d=DATA[name]; if(!d) return NODATA;
+  if(view==="fiber") return fiberColor(d.fiber);
+  if(view==="crime") return crimeColor(d.crime/NAT_CRIME);
+  return BIV[crimeClass(d.crime)][fiberClass(d.fiber)];
+}
+
+/* ===================== FORMAT ===================== */
+const fmtPct  = v => v.toFixed(1)+"%";
+const fmtRate = v => Math.round(v).toLocaleString();
+const ratioPct= c => Math.round(c/NAT_CRIME*100);
+const signed  = c => { const d=Math.round(c/NAT_CRIME*100-100); return (d>=0?"+":"")+d+"%"; };
+
+/* ===================== STATE ===================== */
+let level="county";
+let usView="biv", coView="gig";
+let currentName="West Virginia", currentFips="54";
+let sortKey="name", sortDir=1, filter="";
+let usTopo=null, countiesTopo=null, statesFC=null, dataLayer=null;
+const stateNameFips=new Map();
+const nodeByName=new Map(), nodeByFips=new Map();
+const CONUS = L.latLngBounds([[24.4,-125.0],[49.5,-66.5]]);
+
+const tooltip=document.getElementById("tooltip");
+const search=document.getElementById("search");
+const usRows=Object.entries(DATA).map(([name,d])=>({name,fiber:d.fiber,crime:d.crime,ratio:d.crime/NAT_CRIME}));
+const wvRows=Object.keys(WV).map(fips=>{
+  const m=WV[fips], f=WVF[fips]||{};
+  const anyPct=coPct(f,"any"), gigPct=coPct(f,"gig");
+  return {fips,name:m.name,
+          gigPct:gigPct==null?null:+gigPct.toFixed(1),
+          anyPct:anyPct==null?null:+anyPct.toFixed(1),
+          bb:m.bb??null, crime:m.crime??null, ratio:m.crime!=null?m.crime/NAT_CRIME:null,
+          any:f.any??null, gig:f.gig??null, hu:f.hu??null};
+});
+
+/* ===================== MAP (Leaflet + terrain) ===================== */
+const map=L.map("map",{center:[38.9,-80.6],zoom:7,minZoom:3,maxZoom:16,zoomControl:true,worldCopyJump:false});
+const baseLayers={
+  "USGS Topo (contours)": L.tileLayer("https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",{maxZoom:16,attribution:"USGS The National Map — USGS Topo / 3DEP"}),
+  "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",{maxZoom:16,subdomains:"abc",attribution:"&copy; OpenTopoMap (CC-BY-SA), &copy; OpenStreetMap"}),
+  "Terrain (hillshade)": L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",{maxZoom:16,attribution:"Hillshade &copy; Esri, USGS"}),
+  "Shaded relief": L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}",{maxZoom:13,attribution:"Shaded relief &copy; Esri"}),
+  "Plain (light)": L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",{maxZoom:19,subdomains:"abcd",attribution:"&copy; OpenStreetMap, &copy; CARTO"})
+};
+baseLayers["USGS Topo (contours)"].addTo(map);   // real USGS topo: contour lines + elevation labels appear as you zoom in
+L.control.layers(baseLayers,null,{position:"topright",collapsed:false}).addTo(map);
+
+/* ---- elevation tools (USGS topo shows contour numbers; these add explicit values) ---- */
+const elevLayer=L.layerGroup().addTo(map);   // click-to-probe spot heights
+const labelLayer=L.layerGroup().addTo(map);  // per-county centroid elevation labels
+let elevMode=false, labelsOn=true;
+const feet=m=>Math.round(m*3.28084);
+async function probeElevation(latlng){
+  const pin=L.circleMarker(latlng,{radius:4,color:"#0b1220",weight:2,fillColor:"#ffd166",fillOpacity:1}).addTo(elevLayer);
+  pin.bindTooltip("…",{permanent:true,direction:"top",className:"elev-tip",offset:[0,-5]}).openTooltip();
+  try{
+    const r=await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${latlng.lat.toFixed(5)}&longitude=${latlng.lng.toFixed(5)}`);
+    const j=await r.json(); const m=(j&&j.elevation&&j.elevation.length)?j.elevation[0]:null;
+    pin.setTooltipContent(m==null?"no data":`${feet(m).toLocaleString()} ft · ${Math.round(m).toLocaleString()} m`);
+  }catch(e){ pin.setTooltipContent("no data"); }
+}
+async function addCountyLabels(layer){
+  labelLayer.clearLayers();
+  const centers=[]; layer.eachLayer(l=>centers.push(l.getBounds().getCenter()));
+  if(!centers.length) return;
+  try{
+    const lat=centers.map(c=>c.lat.toFixed(4)).join(","), lon=centers.map(c=>c.lng.toFixed(4)).join(",");
+    const r=await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`);
+    const j=await r.json(); const el=(j&&j.elevation)||[];
+    centers.forEach((c,i)=>{ const m=el[i]; if(m==null) return;
+      L.marker(c,{interactive:false,keyboard:false,icon:L.divIcon({className:"elev-lab",html:feet(m).toLocaleString()+" ft",iconSize:[48,14],iconAnchor:[24,7]})}).addTo(labelLayer);
+    });
+    if(labelsOn){ if(!map.hasLayer(labelLayer)) labelLayer.addTo(map); } else map.removeLayer(labelLayer);
+  }catch(e){}
+}
+
+/* ---- style helpers (semi-transparent so terrain shows through) ---- */
+function styleUS(f){
+  const name=f.properties.name, has=!!DATA[name];
+  return {fillColor: has?colorFor(name,usView):NODATA, fillOpacity: has?0.66:0.12,
+          color:"#ffffff", weight:0.8, opacity:1};
+}
+function countyCell(fips){
+  let c=NODATA, has=false;
+  if(coView==="gig"){ const p=coPct(WVF[fips],"gig"); if(p!=null){c=fiberCoColor(p);has=true;} }
+  else if(coView==="fiberAny"){ const p=coPct(WVF[fips],"any"); if(p!=null){c=fiberCoColor(p);has=true;} }
+  else if(coView==="bb"){ const m=WV[fips]; if(m&&m.bb!=null){c=bbColor(m.bb);has=true;} }
+  else { const m=WV[fips]; if(m&&m.crime!=null){c=coCrimeCol(m.crime);has=true;} }
+  return {c,has};
+}
+function styleCounty(f){
+  const {c,has}=countyCell(String(f.id));
+  return {fillColor:c, fillOpacity: has?0.7:0.1, color:"#ffffff", weight:0.7, opacity:1};
+}
+function hl(layer){ if(layer){ layer.setStyle({weight:2.6,color:"#0b1220"}); layer.bringToFront(); } }
+function unhl(layer){ if(layer&&dataLayer) dataLayer.resetStyle(layer); }
+
+/* ---- feature event wiring ---- */
+function onEachUS(f,layer){
+  nodeByName.set(f.properties.name,layer);
+  layer.on({
+    mouseover:()=>hl(layer),
+    mousemove:e=>showTipUS(e.originalEvent,f),
+    mouseout:()=>{unhl(layer);tooltip.style.opacity=0;},
+    click:e=>{ if(elevMode) probeElevation(e.latlng); else drillDown(String(f.id).padStart(2,"0"),f.properties.name); }
+  });
+}
+function onEachCounty(f,layer){
+  nodeByFips.set(String(f.id),layer);
+  layer.on({
+    mouseover:()=>hl(layer),
+    mousemove:e=>showTipCounty(e.originalEvent,f),
+    mouseout:()=>{unhl(layer);tooltip.style.opacity=0;},
+    click:e=>{ if(elevMode) probeElevation(e.latlng); }
+  });
+}
+
+/* ===================== INIT ===================== */
+d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(us=>{
+  usTopo=us;
+  statesFC=topojson.feature(us,us.objects.states);
+  statesFC.features.forEach(f=>stateNameFips.set(f.properties.name,String(f.id).padStart(2,"0")));
+  drillDown("54","West Virginia");
+}).catch(()=>{document.getElementById("err").style.display="block";});
+
+/* ===================== VIEW SWITCHING ===================== */
+async function drillDown(fips,name){
+  try{
+    level="county"; currentFips=fips; currentName=name; coView="gig";
+    sortKey="name"; sortDir=1; filter=""; search.value="";
+    if(!countiesTopo) countiesTopo=await d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json");
+    const geoms=countiesTopo.objects.counties.geometries.filter(g=>String(g.id).startsWith(fips));
+    const fc=topojson.feature(countiesTopo,{type:"GeometryCollection",geometries:geoms});
+    nodeByFips.clear(); nodeByName.clear();
+    if(dataLayer) map.removeLayer(dataLayer);
+    dataLayer=L.geoJSON(fc,{style:styleCounty,onEachFeature:onEachCounty}).addTo(map);
+    const b=dataLayer.getBounds(); if(b.isValid()) map.fitBounds(b,{padding:[12,12]});
+    elevLayer.clearLayers(); addCountyLabels(dataLayer);
+    renderAll();
+  }catch(err){ document.getElementById("err").style.display="block"; }
+}
+function backToUS(){
+  level="us"; sortKey="name"; sortDir=1; filter=""; search.value="";
+  nodeByFips.clear(); nodeByName.clear(); elevLayer.clearLayers(); labelLayer.clearLayers();
+  if(dataLayer) map.removeLayer(dataLayer);
+  dataLayer=L.geoJSON(statesFC,{style:styleUS,onEachFeature:onEachUS}).addTo(map);
+  map.fitBounds(CONUS,{padding:[6,6]});
+  renderAll();
+}
+function recolorUS(){ if(dataLayer) dataLayer.setStyle(styleUS); }
+function recolorCounties(){ if(dataLayer) dataLayer.setStyle(styleCounty); }
+
+/* ===================== TOOLTIP ===================== */
+const row=(k,v,big)=>`<div class="row"><span class="k">${k}</span><span class="${big?'big':''}">${v}</span></div>`;
+function place(ev){
+  const r=tooltip.getBoundingClientRect(); const pad=14;
+  let x=ev.clientX+pad, y=ev.clientY+pad;
+  if(x+r.width>innerWidth) x=ev.clientX-r.width-pad;
+  if(y+r.height>innerHeight) y=ev.clientY-r.height-pad;
+  tooltip.style.left=x+"px"; tooltip.style.top=y+"px";
+}
+function showTipUS(ev,f){
+  const name=f.properties.name, rec=DATA[name];
+  let h=`<h4>${name}</h4>`;
+  if(!rec) h+=row("No data","");
+  else h+=row("Fiber available",fmtPct(rec.fiber),1)+row("Violent crime",fmtRate(rec.crime)+" /100k",1)+row("vs. national avg",ratioPct(rec.crime)+"% ("+signed(rec.crime)+")",1)+`<div class="row"><span class="k">Click to drill in →</span></div>`;
+  tooltip.innerHTML=h; tooltip.style.opacity=1; place(ev);
+}
+function showTipCounty(ev,f){
+  const fips=String(f.id), m=WV[fips], ff=WVF[fips];
+  const name=(m&&m.name)||(f.properties&&f.properties.name)||"County";
+  let h=`<h4>${name} County</h4>`;
+  if(ff&&ff.hu){
+    h+=row("Gigabit fiber",fmtPct(coPct(ff,"gig")),1);
+    h+=row("Any fiber",fmtPct(coPct(ff,"any")));
+    h+=row("Fiber homes",ff.gig.toLocaleString()+" / "+ff.hu.toLocaleString()+" hu");
+  } else h+=row("Fiber","no data");
+  if(m&&m.bb!=null) h+=row("Broadband adoption",fmtPct(m.bb));
+  if(m&&m.crime!=null) h+=row("Violent crime",fmtRate(m.crime)+" /100k ("+ratioPct(m.crime)+"% of US)");
+  else h+=row("Violent crime","no county data");
+  tooltip.innerHTML=h; tooltip.style.opacity=1; place(ev);
+}
+
+/* ===================== CONTROLS ===================== */
+document.getElementById("seg").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  if(level==="us"){ usView=b.dataset.v; recolorUS(); } else { coView=b.dataset.v; recolorCounties(); }
+  [...e.currentTarget.children].forEach(x=>x.classList.toggle("active",x===b));
+  renderLegend(); renderCallouts();
+});
+search.addEventListener("input",e=>{filter=e.target.value;renderTable();});
+
+const elevBtn=document.getElementById("elevBtn"), labelBtn=document.getElementById("labelBtn");
+labelBtn.style.background="#dbeafe";
+elevBtn.addEventListener("click",()=>{
+  elevMode=!elevMode;
+  elevBtn.textContent="⛰ Probe: "+(elevMode?"on — click map":"off");
+  elevBtn.style.background=elevMode?"#fde68a":""; elevBtn.style.borderColor=elevMode?"#f59e0b":"";
+  document.getElementById("map").style.cursor=elevMode?"crosshair":"";
+  if(!elevMode) elevLayer.clearLayers();
+});
+labelBtn.addEventListener("click",()=>{
+  labelsOn=!labelsOn;
+  labelBtn.textContent="🔢 Elevations: "+(labelsOn?"on":"off");
+  labelBtn.style.background=labelsOn?"#dbeafe":"";
+  if(labelsOn) labelLayer.addTo(map); else map.removeLayer(labelLayer);
+});
+
+/* ---- address search: U.S. Census geocoder (JSONP, rural-friendly, returns the census block) + Photon autocomplete ---- */
+const searchLayer=L.layerGroup().addTo(map);
+const addrInput=document.getElementById("addrSearch"), addrMsg=document.getElementById("addrMsg"), addrSug=document.getElementById("addrSug");
+const escapeHtml=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const FBLK=new Set((window.WVBLK&&WVBLK.any)?WVBLK.any.split(","):[]);
+const FNOGIG=new Set((window.WVBLK&&WVBLK.nogig)?WVBLK.nogig.split(","):[]);
+const HAVE_BLOCKS=!!(window.WVBLK&&WVBLK.any);
+async function fetchElevFt(lat,lon){ try{const r=await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${(+lat).toFixed(5)}&longitude=${(+lon).toFixed(5)}`);const j=await r.json();const m=(j&&j.elevation&&j.elevation.length)?j.elevation[0]:null;return m==null?null:feet(m);}catch(e){return null;} }
+async function fccBlock(lat,lon){ try{const r=await fetch(`https://geo.fcc.gov/api/census/block/find?latitude=${lat}&longitude=${lon}&censusYear=2020&format=json`);const j=await r.json();return (j&&j.Block&&j.Block.FIPS)||null;}catch(e){return null;} }
+let __cgi=0;
+function censusGeocode(q){
+  return new Promise(res=>{
+    const cb="__cg"+(++__cgi); let done=false;
+    const s=document.createElement("script");
+    function cleanup(){ try{delete window[cb];}catch(e){window[cb]=void 0;} if(s.parentNode) s.parentNode.removeChild(s); }
+    window[cb]=d=>{ done=true; cleanup();
+      const m=(d&&d.result&&d.result.addressMatches)||[];
+      if(!m.length){ res(null); return; }
+      const a=m[0], bg=a.geographies&&a.geographies["2020 Census Blocks"]&&a.geographies["2020 Census Blocks"][0];
+      res({lat:+a.coordinates.y, lon:+a.coordinates.x, matched:a.matchedAddress, block:bg&&bg.GEOID});
+    };
+    s.onerror=()=>{ if(!done){cleanup();res(null);} };
+    s.src="https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress?address="+encodeURIComponent(q)+"&benchmark=Public_AR_Current&vintage=Current_Current&format=jsonp&callback="+cb;
+    document.head.appendChild(s);
+    setTimeout(()=>{ if(!done){cleanup();res(null);} },8000);
+  });
+}
+async function nominatimGeo(q){ try{const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q="+encodeURIComponent(q));const j=await r.json();return j&&j[0]?{lat:+j[0].lat,lon:+j[0].lon,matched:j[0].display_name}:null;}catch(e){return null;} }
+function blockFiberHtml(block){
+  if(!block) return "";
+  if(block.slice(0,2)!=="54") return `<div class="ap-row">Census block: <b>${block}</b></div><div class="ap-note">FCC block-fiber data is loaded for West Virginia only.</div>`;
+  if(!HAVE_BLOCKS) return `<div class="ap-row">Census block: <b>${block}</b></div><div class="ap-note">Block-level file (wv_blocks.js) not loaded — keep it beside this page.</div>`;
+  const k=block.slice(2), any=FBLK.has(k), gig=any&&!FNOGIG.has(k);
+  const status= any ? (gig?'<b style="color:#0f766e">Yes — gigabit fiber</b>':'<b style="color:#b45309">Yes — fiber (sub-gigabit)</b>') : '<b style="color:#b91c1c">No fiber reported</b>';
+  return `<div class="ap-sub">This census block — FCC fiber (Dec 2025)</div>
+    <div class="ap-row">Block: <b>${block}</b></div>
+    <div class="ap-row">Fiber available here: ${status}</div>`;
+}
+function countyFromBlockHtml(block){
+  if(!block||block.slice(0,2)!=="54") return "";
+  const fips=block.slice(0,5), m=WV[fips], ff=WVF[fips];
+  if(!m) return "";
+  const gig=ff?fmtPct(coPct(ff,"gig")):"—", any=ff?fmtPct(coPct(ff,"any")):"—";
+  const ad=m.bb!=null?fmtPct(m.bb):"—", cr=m.crime!=null?(Math.round(m.crime)+" /100k"):"—";
+  return `<div class="ap-sub">${escapeHtml(m.name)} County — county-wide</div>
+    <div class="ap-row">Gigabit: <b>${gig}</b> · Any fiber: <b>${any}</b></div>
+    <div class="ap-row">Adoption: <b>${ad}</b> · Crime: <b>${cr}</b></div>`;
+}
+async function resolveAddress(query, coords){
+  const q=(query||"").trim(); if(!q) return;
+  hideSug(); addrMsg.textContent="Searching…";
+  let lat,lon,block,matched;
+  const c=await censusGeocode(q);
+  if(c){ lat=c.lat; lon=c.lon; matched=c.matched; block=c.block||await fccBlock(lat,lon); }
+  else if(coords){ lat=coords.lat; lon=coords.lon; matched=q; block=await fccBlock(lat,lon); }
+  else{ const nm=await nominatimGeo(q); if(nm){ lat=nm.lat; lon=nm.lon; matched=nm.matched; block=await fccBlock(lat,lon); } }
+  if(lat==null){ addrMsg.textContent="No match — try “street, city, ST ZIP”."; return; }
+  searchLayer.clearLayers();
+  map.setView([lat,lon],15);
+  const mk=L.marker([lat,lon],{icon:L.divIcon({className:"addr-pin",html:"📍",iconSize:[24,24],iconAnchor:[12,24],popupAnchor:[0,-22]})}).addTo(searchLayer);
+  const html=`<div class="addr-pop"><b>${escapeHtml(matched||q)}</b>`+
+    `<div class="ap-row" id="addr-elev">Elevation: …</div>`+
+    blockFiberHtml(block)+countyFromBlockHtml(block)+`</div>`;
+  mk.bindPopup(html,{maxWidth:300}).openPopup();
+  addrMsg.textContent="";
+  fetchElevFt(lat,lon).then(ft=>{const el=document.getElementById("addr-elev"); if(el) el.textContent="Elevation: "+(ft==null?"n/a":ft.toLocaleString()+" ft");});
+}
+/* ---- autocomplete (Photon, debounced) ---- */
+let sugItems=[], sugIdx=-1, sugTimer=null;
+function hideSug(){ addrSug.style.display="none"; addrSug.innerHTML=""; sugItems=[]; sugIdx=-1; }
+function renderSug(){
+  if(!sugItems.length){ hideSug(); return; }
+  addrSug.innerHTML=sugItems.map((s,i)=>`<div class="sug-item${i===sugIdx?' active':''}" data-i="${i}">${escapeHtml(s.label)}</div>`).join("");
+  addrSug.style.display="block";
+}
+async function suggest(q){
+  if(q.length<3){ hideSug(); return; }
+  try{
+    const r=await fetch("https://photon.komoot.io/api/?limit=6&lang=en&lat=38.9&lon=-80.6&q="+encodeURIComponent(q));
+    const j=await r.json();
+    sugItems=(j.features||[]).map(f=>{const p=f.properties||{};
+      const line1=[p.housenumber,p.street].filter(Boolean).join(" ")||p.name||"";
+      const label=[line1,(p.city||p.town||p.village||p.county),p.state,p.postcode].filter(Boolean).join(", ");
+      return {label, lat:f.geometry.coordinates[1], lon:f.geometry.coordinates[0]};
+    }).filter(s=>s.label);
+    sugIdx=-1; renderSug();
+  }catch(e){ hideSug(); }
+}
+addrInput.addEventListener("input",()=>{ clearTimeout(sugTimer); const q=addrInput.value.trim(); sugTimer=setTimeout(()=>suggest(q),320); });
+addrInput.addEventListener("keydown",e=>{
+  const open=addrSug.style.display==="block"&&sugItems.length;
+  if(open&&e.key==="ArrowDown"){ e.preventDefault(); sugIdx=(sugIdx+1)%sugItems.length; renderSug(); return; }
+  if(open&&e.key==="ArrowUp"){ e.preventDefault(); sugIdx=(sugIdx-1+sugItems.length)%sugItems.length; renderSug(); return; }
+  if(e.key==="Enter"){ e.preventDefault(); if(open&&sugIdx>=0){ const s=sugItems[sugIdx]; addrInput.value=s.label; resolveAddress(s.label,{lat:s.lat,lon:s.lon}); } else { resolveAddress(addrInput.value); } return; }
+  if(e.key==="Escape"){ hideSug(); }
+});
+addrSug.addEventListener("mousedown",e=>{ const it=e.target.closest(".sug-item"); if(!it) return; e.preventDefault(); const s=sugItems[+it.dataset.i]; addrInput.value=s.label; resolveAddress(s.label,{lat:s.lat,lon:s.lon}); });
+document.addEventListener("click",e=>{ if(!e.target.closest(".addrbar")) hideSug(); });
+document.getElementById("addrBtn").addEventListener("click",()=>resolveAddress(addrInput.value));
+
+function stateOptions(){
+  return [...stateNameFips.keys()].sort().map(n=>{
+    const f=stateNameFips.get(n), has=(f==="54");
+    return `<option value="${f}" data-name="${n}">${n}${has?"  ✓ data":""}</option>`;
+  }).join("");
+}
+function renderControls(){
+  const seg=document.getElementById("seg"), dc=document.getElementById("drillctl");
+  if(level==="us"){
+    seg.innerHTML=`<button data-v="biv">Both (combined)</button><button data-v="fiber">Fiber availability</button><button data-v="crime">Crime vs. avg</button>`;
+    [...seg.children].forEach(b=>b.classList.toggle("active",b.dataset.v===usView));
+    dc.innerHTML=`<label class="drill">Drill into a state <select id="stateSel"><option value="">Choose…</option>${stateOptions()}</select></label>`;
+    document.getElementById("stateSel").addEventListener("change",e=>{
+      const o=e.target.selectedOptions[0]; if(o.value) drillDown(o.value,o.dataset.name);
+    });
+  }else{
+    seg.innerHTML=`<button data-v="gig">Gigabit fiber</button><button data-v="fiberAny">Any fiber</button><button data-v="bb">Broadband adoption</button><button data-v="crime">Violent crime</button>`;
+    [...seg.children].forEach(b=>b.classList.toggle("active",b.dataset.v===coView));
+    dc.innerHTML=`<button class="back" id="backBtn">← Back to US map</button>`;
+    document.getElementById("backBtn").addEventListener("click",backToUS);
+  }
+}
+
+/* ===================== HEADER / BANNER ===================== */
+function updateHeader(){
+  const T=document.getElementById("pageTitle"), S=document.getElementById("pageSub"), B=document.getElementById("banner");
+  if(level==="us"){
+    T.textContent="United States — Fiber & Violent Crime";
+    S.textContent="Choropleth over USGS topo terrain. Click a state to drill in; toggle ⛰ Probe and click anywhere for a spot elevation. (AK & HI: zoom/pan out.)";
+    B.className=""; B.innerHTML="";
+  }else{
+    T.textContent=currentName+" — county-level detail";
+    S.textContent="Fiber, adoption & crime over USGS topo terrain. Each county is labeled with its centroid elevation; switch basemaps or zoom in for contour lines, and use ⛰ Probe to click for any-point heights.";
+    if(currentFips==="54"){
+      B.className="show";
+      B.innerHTML="Showing <b>West Virginia</b> over the <b>USGS topographic basemap</b>, each county labeled with its elevation (ft) — notice how the fiber gaps track the Appalachian ridgelines. Toggle 🔢 Elevations or ⛰ Probe (click the map) for heights. Fiber layers: <b>FCC</b> (Dec 2025), shown as est. % of homes (FCC locations ÷ Census housing units), a few points below FCC's official figure. <b>Adoption</b> is a separate Census measure (any-internet subscription). Crime is reported for only 8 of 55 counties (translucent = none).";
+    }else{
+      B.className="show";
+      B.innerHTML="<b>"+currentName+"</b>: granular data isn't loaded for this state yet — counties are drawn translucent over the terrain. Ask me to add "+currentName+" and I'll wire it up.";
+    }
+  }
+}
+
+/* ===================== LEGEND ===================== */
+function grad(fn,a,b,n=24){let s=[];for(let i=0;i<=n;i++){const t=i/n;s.push(fn(a+(b-a)*t)+" "+(t*100).toFixed(1)+"%");}return"linear-gradient(to right,"+s.join(",")+")";}
+function renderLegend(){
+  const el=document.getElementById("legend");
+  if(level==="county"&&currentFips!=="54"){ el.innerHTML=`<div class="leg-note">No granular data loaded for ${currentName} yet — ask to add it.</div>`; return; }
+  if(level==="us"&&usView==="fiber"){
+    const ap=((NAT_FIBER-8)/(84-8)*100).toFixed(1);
+    el.innerHTML=`<div style="flex:1;min-width:260px;max-width:520px"><div class="leg-title">Fiber internet availability (% of households)</div>
+      <div class="bar" style="background:${grad(fiberColor,8,84)}"></div>
+      <div class="bar-labels"><span class="t" style="left:0">13%<b>Alaska</b></span>
+      <span class="t" style="left:${ap}%"><span class="tick"></span>52%<b>US avg</b></span>
+      <span class="t" style="left:100%">81%<b>R.I.</b></span></div></div>`;
+  }else if(level==="us"&&usView==="crime"){
+    const lo=0.25,hi=2.9,ap=((1-lo)/(hi-lo)*100).toFixed(1);
+    el.innerHTML=`<div style="flex:1;min-width:260px;max-width:560px"><div class="leg-title">Violent crime, as % of national average (359 /100k)</div>
+      <div class="bar" style="background:${grad(crimeColor,lo,hi)}"></div>
+      <div class="bar-labels"><span class="t" style="left:0">~28%<b>safest</b></span>
+      <span class="t" style="left:${ap}%"><span class="tick"></span>100%<b>US avg</b></span>
+      <span class="t" style="left:78%">~200%</span><span class="t" style="left:100%">280%<b>D.C.</b></span></div>
+      <div class="leg-note">Blue = below average · Red = above average</div></div>`;
+  }else if(level==="us"){
+    const cells=[2,1,0].map(cr=>[0,1,2].map(fb=>`<i style="background:${BIV[cr][fb]}"></i>`).join("")).join("");
+    el.innerHTML=`<div class="bivwrap"><div><div class="leg-title">Combined overlay</div>
+      <div class="bivgridbox"><div class="ylab">More violent crime →</div>
+      <div><div class="g3">${cells}</div><div class="xlab">More fiber →</div></div></div></div>
+      <div class="bivnotes">
+        <div><span class="sw" style="background:#5ac8c8"></span><b>High fiber · low crime</b> — sweet spot</div>
+        <div><span class="sw" style="background:#3b4994"></span>High fiber · high crime</div>
+        <div><span class="sw" style="background:#e8e8e8"></span>Low fiber · low crime</div>
+        <div><span class="sw" style="background:#be64ac"></span><b>Low fiber · high crime</b></div>
+      </div></div>`;
+  }else if(coView==="gig"||coView==="fiberAny"){
+    const isGig=coView==="gig", avg=isGig?WV_GIG_AVG:WV_ANY_AVG, ap=(avg/95*100).toFixed(1);
+    el.innerHTML=`<div style="flex:1;min-width:260px;max-width:540px"><div class="leg-title">${isGig?'Gigabit (≥1 Gbps) fiber':'Any fiber'} availability — est. % of homes · FCC Dec 2025</div>
+      <div class="bar" style="background:${grad(fiberCoColor,0,95)}"></div>
+      <div class="bar-labels"><span class="t" style="left:0">0%</span>
+      <span class="t" style="left:${ap}%"><span class="tick"></span>${avg}%<b>WV est.</b></span>
+      <span class="t" style="left:100%">95%</span></div>
+      <div class="leg-note">Estimate = FCC fiber-serviceable homes ÷ Census housing units. Translucent county = no data.</div></div>`;
+  }else if(coView==="bb"){
+    const ap=((WV_BB_AVG-55)/(86-55)*100).toFixed(1);
+    el.innerHTML=`<div style="flex:1;min-width:260px;max-width:520px"><div class="leg-title">Broadband adoption — % of households subscribing to any internet (Census ACS)</div>
+      <div class="bar" style="background:${grad(bbColor,55,86)}"></div>
+      <div class="bar-labels"><span class="t" style="left:0">59%<b>lowest</b></span>
+      <span class="t" style="left:${ap}%"><span class="tick"></span>73%<b>WV avg</b></span>
+      <span class="t" style="left:100%">83%<b>Monongalia</b></span></div>
+      <div class="leg-note">Different metric from fiber: whether homes <i>subscribe</i> to any service, not whether fiber is available.</div></div>`;
+  }else{
+    el.innerHTML=`<div style="flex:1;min-width:260px;max-width:520px"><div class="leg-title">Violent crime per 100k — counties that report (8 of 55)</div>
+      <div class="bar" style="background:${grad(coCrimeCol,35,185)}"></div>
+      <div class="bar-labels"><span class="t" style="left:0">44<b>Monongalia</b></span>
+      <span class="t" style="left:100%">170<b>Raleigh</b></span></div>
+      <div class="leg-note"><span class="sw" style="background:#eef0f3;border:1px solid #c7ccd4"></span>Translucent (terrain shows through) = no county data reported. WV avg 249, US avg 359 — every reporting county is well below the national average.</div></div>`;
+  }
+}
+
+/* ===================== CALLOUTS ===================== */
+function chips(a){return a.map(n=>`<span class="chip">${n}</span>`).join("");}
+function renderCallouts(){
+  const el=document.getElementById("callouts");
+  if(level==="county"&&currentFips!=="54"){ el.innerHTML=`<div class="callout"><h3>No county data yet</h3><p>${currentName} isn't wired up for drill-down. West Virginia is the loaded example — ask me to add ${currentName}.</p></div>`; return; }
+  if(level==="us"){
+    const best=[],worst=[];
+    for(const [n,d] of Object.entries(DATA)){
+      if(fiberClass(d.fiber)===2&&crimeClass(d.crime)===0) best.push(n);
+      if(fiberClass(d.fiber)===0&&crimeClass(d.crime)===2) worst.push(n);
+    }
+    best.sort((a,b)=>DATA[b].fiber-DATA[a].fiber); worst.sort((a,b)=>DATA[b].crime-DATA[a].crime);
+    el.innerHTML=`<div class="callout"><h3><span class="dot" style="background:#5ac8c8"></span>Sweet spot — fast fiber, below-average crime</h3>
+      <p>Fiber to 60%+ of households and violent crime under 75% of the US average.</p><div class="chips">${chips(best)}</div></div>
+      <div class="callout"><h3><span class="dot" style="background:#be64ac"></span>Tough combo — limited fiber, high crime</h3>
+      <p>Fiber under 45% of households and crime above 125% of the US average.</p><div class="chips">${chips(worst)}</div></div>`;
+  }else{
+    const ranked=wvRows.filter(r=>r.gigPct!=null).sort((a,b)=>b.gigPct-a.gigPct);
+    const top=ranked.slice(0,5).map(r=>r.name+" ("+Math.round(r.gigPct)+"%)");
+    const bot=ranked.slice(-5).reverse().map(r=>r.name+" ("+Math.round(r.gigPct)+"%)");
+    el.innerHTML=`<div class="callout"><h3><span class="dot" style="background:${fiberCoColor(80)}"></span>Most gigabit fiber</h3>
+      <p>Highest estimated share of homes that can buy 1 Gbps fiber — often small rural telephone co-ops.</p><div class="chips">${chips(top)}</div></div>
+      <div class="callout"><h3><span class="dot" style="background:${fiberCoColor(6)}"></span>Fiber deserts</h3>
+      <p>Almost no gigabit fiber for sale — the rural connectivity gap, mostly along the ridges.</p><div class="chips">${chips(bot)}</div></div>`;
+  }
+}
+
+/* ===================== TABLE ===================== */
+function renderTable(){
+  const isUS=level==="us";
+  if(level==="county"&&currentFips!=="54"){
+    document.getElementById("tblSummary").textContent=currentName+" — no county data loaded";
+    document.getElementById("dataTable").innerHTML="<tbody><tr><td style='color:var(--muted);padding:14px 10px'>County-level data isn't loaded for "+currentName+" yet. West Virginia is the example dataset.</td></tr></tbody>";
+    return;
+  }
+  document.getElementById("tblSummary").textContent = isUS
+    ? "Full data table — 50 states + DC (click headers to sort)"
+    : currentName+" counties — fiber availability, adoption & crime (click headers to sort)";
+  const cols = isUS
+    ? [["name","State"],["fiber","Fiber %"],["crime","Crime /100k"],["ratio","vs US avg"]]
+    : [["name","County"],["gigPct","Gigabit %"],["anyPct","Any fiber %"],["bb","Adoption %"],["crime","Crime /100k"]];
+  const base = isUS?usRows:wvRows;
+  const f=filter.trim().toLowerCase();
+  const rows=base.filter(r=>r.name.toLowerCase().includes(f)).sort((a,b)=>{
+    if(sortKey==="name") return sortDir*a.name.localeCompare(b.name);
+    const av=a[sortKey]==null?-Infinity:a[sortKey], bv=b[sortKey]==null?-Infinity:b[sortKey];
+    return sortDir*(av-bv);
+  });
+  const thead="<thead><tr>"+cols.map(c=>`<th data-key="${c[0]}">${c[1]} <span class="ar">${c[0]===sortKey?(sortDir>0?"▲":"▼"):""}</span></th>`).join("")+"</tr></thead>";
+  const body=rows.map(r=>{
+    if(isUS){
+      const dot=BIV[crimeClass(r.crime)][fiberClass(r.fiber)];
+      const vs=`<span class="${r.ratio>=1?'up':'dn'}">${Math.round(r.ratio*100)}% (${signed(r.crime)})</span>`;
+      return `<tr data-id="${r.name}"><td><span class="dot" style="background:${dot}"></span>${r.name}</td><td>${fmtPct(r.fiber)}</td><td>${fmtRate(r.crime)}</td><td>${vs}</td></tr>`;
+    }
+    const dot=(r.gigPct!=null)?fiberCoColor(r.gigPct):NODATA;
+    const g=r.gigPct!=null?fmtPct(r.gigPct):"—";
+    const a=r.anyPct!=null?fmtPct(r.anyPct):"—";
+    const bb=r.bb!=null?fmtPct(r.bb):"—";
+    const cr=r.crime!=null?fmtRate(r.crime):"—";
+    return `<tr data-id="${r.fips}"><td><span class="dot" style="background:${dot}"></span>${r.name}</td><td>${g}</td><td>${a}</td><td>${bb}</td><td>${cr}</td></tr>`;
+  }).join("");
+  const t=document.getElementById("dataTable"); t.innerHTML=thead+"<tbody>"+body+"</tbody>";
+  t.querySelectorAll("th").forEach(th=>th.addEventListener("click",()=>{
+    const k=th.dataset.key; if(k===sortKey) sortDir*=-1; else {sortKey=k;sortDir=k==="name"?1:-1;} renderTable();
+  }));
+  t.querySelectorAll("tbody tr").forEach(tr=>{
+    const id=tr.dataset.id, node=isUS?nodeByName.get(id):nodeByFips.get(id);
+    tr.addEventListener("mouseenter",()=>{hl(node); if(node&&node.openTooltip) {} });
+    tr.addEventListener("mouseleave",()=>unhl(node));
+  });
+}
+
+/* ===================== FOOTER ===================== */
+document.getElementById("footer").innerHTML=`<strong>Sources &amp; notes.</strong>
+  <b>Basemap &amp; elevation</b> — USGS Topo (The National Map) with contour elevations, plus Esri hillshade/relief, OpenTopoMap, CARTO (switch on the map). Spot &amp; per-county elevations from the Open-Meteo Elevation API (Copernicus 90&nbsp;m DEM).
+  <b>State layer</b> — violent crime: FBI 2024 (US avg 359.1 /100k); fiber availability: Reviews.org (US avg ≈52%).
+  <b>County fiber (WV)</b> — FCC Broadband Data Collection, Dec 2025 (residential FTTP locations; gigabit = ≥1000 Mbps down) ÷ Census housing units (2018); an estimate that runs a few points below FCC's official location-based %.
+  <b>County adoption</b> — Census ACS via IndexMundi (any-broadband subscription, 2014–2018). <b>County crime</b> — FBI UCR via PlainCrime (8 of 55 counties).
+  Outlines: U.S. Census via the us-atlas project. Address search: U.S. Census Geocoder (rural-friendly, returns the 2020 census block) with Photon autocomplete and Nominatim fallback; the per-address line shows the FCC fiber status for that exact census block (companion file <code>wv_blocks.js</code>).`;
+
+/* ===================== RENDER ALL ===================== */
+function renderAll(){ renderControls(); updateHeader(); renderLegend(); renderCallouts(); renderTable(); }
+</script>
+</body>
+</html>
