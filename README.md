@@ -1,5 +1,7 @@
 # Area Recon
 
+> 🤖 **AI agent or new contributor? Start with [CLAUDE.md](CLAUDE.md).** It covers the architecture, data layers & sources, the `index.html` code map, how to run/preview, deploy, and the current in-progress task.
+
 An interactive map for **scouting an area** — fiber-internet availability, violent crime, and terrain — with address search that resolves down to the **FCC census block**. **County-level fiber availability covers all 50 states** (official FCC data); **West Virginia** carries the extra detail — exact block-level address lookup, broadband adoption, and violent crime.
 
 It's a single self-contained web page (HTML + a small data file + map libraries from a CDN). No build step, no server required.
