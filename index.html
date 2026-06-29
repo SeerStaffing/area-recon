@@ -227,39 +227,6 @@ const WV = {
 };
 const WV_BB_AVG = 72.9;
 
-// ---- County FIBER availability (WV), FCC Broadband Data Collection, Dec 2025 ----
-// any/gig = distinct residential FTTP locations (gig = >=1000 Mbps down); hu = Census housing units
-const WVF = {
-  "54001":{any:1946,gig:1946,hu:7923},   "54003":{any:25107,gig:25107,hu:49425},
-  "54005":{any:4370,gig:4370,hu:11166},  "54007":{any:18,gig:18,hu:7427},
-  "54009":{any:3266,gig:2648,hu:10798},  "54011":{any:21302,gig:21302,hu:46327},
-  "54013":{any:976,gig:976,hu:3994},     "54015":{any:1090,gig:1090,hu:4629},
-  "54017":{any:2913,gig:2913,hu:3908},   "54019":{any:2666,gig:2666,hu:21518},
-  "54021":{any:3023,gig:3023,hu:3569},   "54023":{any:3179,gig:3179,hu:6724},
-  "54025":{any:6271,gig:6271,hu:19376},  "54027":{any:10864,gig:10864,hu:14079},
-  "54029":{any:5345,gig:5345,hu:14332},  "54031":{any:7740,gig:7740,hu:8357},
-  "54033":{any:21382,gig:21382,hu:31769},"54035":{any:7656,gig:7656,hu:13433},
-  "54037":{any:8714,gig:8589,hu:23418},  "54039":{any:25315,gig:25315,hu:92333},
-  "54041":{any:3891,gig:3891,hu:7960},   "54043":{any:1590,gig:1590,hu:9949},
-  "54045":{any:4605,gig:4605,hu:16875},  "54047":{any:10051,gig:10051,hu:11173},
-  "54049":{any:11660,gig:11660,hu:26437},"54051":{any:4095,gig:4095,hu:15734},
-  "54053":{any:6884,gig:6884,hu:13089},  "54055":{any:17094,gig:17094,hu:30013},
-  "54057":{any:2212,gig:2212,hu:13151},  "54059":{any:1555,gig:1555,hu:12843},
-  "54061":{any:21609,gig:21609,hu:45074},"54063":{any:1,gig:1,hu:7657},
-  "54065":{any:5334,gig:5334,hu:10015},  "54067":{any:4245,gig:4245,hu:13170},
-  "54069":{any:6249,gig:6121,hu:20912},  "54071":{any:3432,gig:229,hu:5218},
-  "54073":{any:429,gig:429,hu:3404},     "54075":{any:3815,gig:2699,hu:8940},
-  "54077":{any:10288,gig:10288,hu:15175},"54079":{any:16107,gig:16107,hu:24249},
-  "54081":{any:15757,gig:15757,hu:36172},"54083":{any:10562,gig:10562,hu:14248},
-  "54085":{any:4466,gig:4466,hu:5901},   "54087":{any:364,gig:364,hu:7437},
-  "54089":{any:1451,gig:1451,hu:7712},   "54091":{any:4281,gig:4281,hu:7535},
-  "54093":{any:1240,gig:1240,hu:5366},   "54095":{any:1859,gig:1859,hu:5019},
-  "54097":{any:5361,gig:5361,hu:11428},  "54099":{any:4394,gig:4394,hu:19289},
-  "54101":{any:1230,gig:1230,hu:5448},   "54103":{any:3888,gig:3888,hu:8175},
-  "54105":{any:1091,gig:1091,hu:3332},   "54107":{any:19513,gig:19513,hu:40286},
-  "54109":{any:993,gig:993,hu:10887}
-};
-const WV_GIG_AVG = 41.3, WV_ANY_AVG = 41.9;
 /* County fiber from county_fiber.js (window.COUNTYFIBER {fips:{g,a}}, FCC Dec 2025);
    county crime from county_crime.js (window.COUNTYCRIME {fips:rate}, FBI UCR via CHR ~2009–11 backfill). */
 const cf = fips => (window.COUNTYFIBER && COUNTYFIBER[fips]) || null;
@@ -289,7 +256,6 @@ const coCrimeCol  = d3.scaleSequential(d3.interpolateOrRd).domain([0,800]);
 const fiberCoColor= d3.scaleSequential(d3.interpolateBuGn).domain([0,95]);
 const NODATA = "#9aa3af";
 
-const coPct = (f,key) => (f&&f.hu) ? f[key]/f.hu*100 : null;
 function colorFor(name, view){
   const d=DATA[name]; if(!d) return NODATA;
   if(view==="fiber") return fiberColor(d.fiber);
@@ -524,7 +490,7 @@ function ensureStateBlocks(fips){
     document.head.appendChild(s);
   }));
 }
-async function fetchElevFt(lat,lon){ try{const r=await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${(+lat).toFixed(5)}&longitude=${(+lon).toFixed(5)}`);const j=await r.json();const m=(j&&j.elevation&&j.elevation.length)?j.elevation[0]:null;return m==null?null:feet(m);}catch(e){return null;} }
+async function fetchElevFt(lat,lon){ try{const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),8000);const r=await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${(+lat).toFixed(5)}&longitude=${(+lon).toFixed(5)}`,{signal:ctl.signal});clearTimeout(to);const j=await r.json();const m=(j&&j.elevation&&j.elevation.length)?j.elevation[0]:null;return m==null?null:feet(m);}catch(e){return null;} }
 async function fccBlock(lat,lon){ try{const r=await fetch(`https://geo.fcc.gov/api/census/block/find?latitude=${lat}&longitude=${lon}&censusYear=2020&format=json`);const j=await r.json();return (j&&j.Block&&j.Block.FIPS)||null;}catch(e){return null;} }
 let __cgi=0;
 function censusGeocode(q){
@@ -578,13 +544,18 @@ async function resolveAddress(query, coords){
   searchLayer.clearLayers();
   map.setView([lat,lon],15);
   const mk=L.marker([lat,lon],{icon:L.divIcon({className:"addr-pin",html:"📍",iconSize:[24,24],iconAnchor:[12,24],popupAnchor:[0,-22]})}).addTo(searchLayer);
+  const elevP=fetchElevFt(lat,lon);                      // start elevation now — concurrent with the block-file load, not blocked by it
   if(block) await ensureStateBlocks(block.slice(0,2));   // pull this state's block-fiber file (if built) before rendering the popup
   const html=`<div class="addr-pop"><b>${escapeHtml(matched||q)}</b>`+
     `<div class="ap-row" id="addr-elev">Elevation: …</div>`+
     blockFiberHtml(block)+countyFromBlockHtml(block)+`</div>`;
   mk.bindPopup(html,{maxWidth:300}).openPopup();
   addrMsg.textContent="";
-  fetchElevFt(lat,lon).then(ft=>{const el=document.getElementById("addr-elev"); if(el) el.textContent="Elevation: "+(ft==null?"n/a":ft.toLocaleString()+" ft");});
+  elevP.then(ft=>{                                        // update THIS popup's elevation row (robust against stale ids / re-renders)
+    const node=mk.getPopup&&mk.getPopup()&&mk.getPopup().getElement();
+    const el=(node&&node.querySelector("#addr-elev"))||document.getElementById("addr-elev");
+    if(el) el.textContent="Elevation: "+(ft==null?"n/a":ft.toLocaleString()+" ft");
+  });
 }
 /* ---- autocomplete (Photon, debounced) ---- */
 let sugItems=[], sugIdx=-1, sugTimer=null;
