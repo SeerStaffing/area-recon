@@ -310,6 +310,9 @@ async function probeElevation(latlng){
     pin.setTooltipContent(m==null?"no data":`${feet(m).toLocaleString()} ft · ${Math.round(m).toLocaleString()} m`);
   }catch(e){ pin.setTooltipContent("no data"); }
 }
+/* Probe fires for a click ANYWHERE on the map (terrain/empty area included), not just on a state/county
+   shape — Leaflet bubbles feature clicks up to the map, so this one handler covers both. */
+map.on("click",e=>{ if(elevMode) probeElevation(e.latlng); });
 async function addCountyLabels(layer){
   labelLayer.clearLayers();
   const centers=[]; layer.eachLayer(l=>centers.push(l.getBounds().getCenter()));
@@ -362,7 +365,7 @@ function onEachUS(f,layer){
     mouseover:()=>hl(layer),
     mousemove:e=>showTipUS(e.originalEvent,f),
     mouseout:()=>{unhl(layer);tooltip.style.opacity=0;},
-    click:e=>{ if(elevMode) probeElevation(e.latlng); else drillDown(String(f.id).padStart(2,"0"),f.properties.name); }
+    click:e=>{ if(!elevMode) drillDown(String(f.id).padStart(2,"0"),f.properties.name); }   // probe handled by the map-level click handler
   });
 }
 function onEachCounty(f,layer){
@@ -370,8 +373,7 @@ function onEachCounty(f,layer){
   layer.on({
     mouseover:()=>hl(layer),
     mousemove:e=>showTipCounty(e.originalEvent,f),
-    mouseout:()=>{unhl(layer);tooltip.style.opacity=0;},
-    click:e=>{ if(elevMode) probeElevation(e.latlng); }
+    mouseout:()=>{unhl(layer);tooltip.style.opacity=0;}
   });
 }
 
