@@ -49,6 +49,8 @@
   .addr-pop .ap-sub{font-weight:700;margin-top:6px}
   .addr-pop .ap-row{font-size:12.5px;margin-top:2px}
   .addr-pop .ap-note{font-size:11px;color:var(--muted);margin-top:5px}
+  .addr-pop .ap-fcc{display:inline-block;margin-top:9px;padding:5px 12px;border:1px solid var(--accent);color:var(--accent);border-radius:7px;font-size:12px;font-weight:600;text-decoration:none}
+  .addr-pop .ap-fcc:hover{background:var(--accent);color:#fff}
   #banner{margin:12px 0 0;font-size:12.5px;color:var(--muted);background:#fff;border:1px solid var(--line);
           border-left:3px solid var(--accent);border-radius:8px;padding:10px 13px;display:none}
   #banner.show{display:block}
@@ -548,7 +550,10 @@ async function resolveAddress(query, coords){
   const mk=L.marker([lat,lon],{icon:L.divIcon({className:"addr-pin",html:"📍",iconSize:[24,24],iconAnchor:[12,24],popupAnchor:[0,-22]})}).addTo(searchLayer);
   const elevP=fetchElevFt(lat,lon);                      // start elevation now — concurrent with the block-file load, not blocked by it
   if(block) await ensureStateBlocks(block.slice(0,2));   // pull this state's block-fiber file (if built) before rendering the popup
-  const staticRows=blockFiberHtml(block)+countyFromBlockHtml(block);
+  // hand-off to the FCC map's exact-location view (we already have lat/lon); bump `version` when FCC publishes a newer release
+  const fccUrl=`https://broadbandmap.fcc.gov/location-summary/fixed?version=dec2025&zoom=16&vlon=${lon}&vlat=${lat}&lon=${lon}&lat=${lat}&addr_full=${encodeURIComponent(matched||q)}&br=r`;
+  const staticRows=blockFiberHtml(block)+countyFromBlockHtml(block)
+    +`<a class="ap-fcc" href="${fccUrl}" target="_blank" rel="noopener">Search FCC</a>`;
   const popHtml=elev=>`<div class="addr-pop"><b>${escapeHtml(matched||q)}</b>`+
     `<div class="ap-row">Elevation: ${elev}</div>`+staticRows+`</div>`;
   mk.bindPopup(popHtml("…"),{maxWidth:300}).openPopup();
