@@ -272,7 +272,7 @@ const ratioPct= c => Math.round(c/NAT_CRIME*100);
 const signed  = c => { const d=Math.round(c/NAT_CRIME*100-100); return (d>=0?"+":"")+d+"%"; };
 
 /* ===================== STATE ===================== */
-let level="county";
+let level="us";
 let usView="biv", coView="gig";
 let currentName="West Virginia", currentFips="54";
 let sortKey="name", sortDir=1, filter="";
@@ -287,7 +287,7 @@ const usRows=Object.entries(DATA).map(([name,d])=>({name,fiber:d.fiber,crime:d.c
 let coRows=[];   // current drilled state's county rows (built in drillDown)
 
 /* ===================== MAP (Leaflet + terrain) ===================== */
-const map=L.map("map",{center:[38.9,-80.6],zoom:7,minZoom:3,maxZoom:16,zoomControl:true,worldCopyJump:false});
+const map=L.map("map",{center:[37.8,-96.0],zoom:4,minZoom:3,maxZoom:16,zoomControl:true,worldCopyJump:false});  // open framed on the continental US
 const baseLayers={
   "USGS Topo (contours)": L.tileLayer("https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",{maxZoom:16,attribution:"USGS The National Map — USGS Topo / 3DEP"}),
   "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",{maxZoom:16,subdomains:"abc",attribution:"&copy; OpenTopoMap (CC-BY-SA), &copy; OpenStreetMap"}),
@@ -384,7 +384,7 @@ d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(us=>{
   usTopo=us;
   statesFC=topojson.feature(us,us.objects.states);
   statesFC.features.forEach(f=>stateNameFips.set(f.properties.name,String(f.id).padStart(2,"0")));
-  drillDown("54","West Virginia");
+  backToUS();   // open on the national map; drill into a state (click / dropdown) for county detail
 }).catch(()=>{document.getElementById("err").style.display="block";});
 
 /* ===================== VIEW SWITCHING ===================== */
