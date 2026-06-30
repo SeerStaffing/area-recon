@@ -520,9 +520,35 @@ async function nominatimGeo(q){ try{const r=await fetch("https://nominatim.opens
    they work from this static page, exactly like the Census geocoder. Extend coverage by adding a state's
    findAddressCandidates base URL to STATE_GEO. ---- */
 const US_STATES=new Set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC".split(" "));
+/* Statewide public Esri GeocodeServers (E-911 / address-point based), each verified live + JSONP-capable.
+   Add a state by adding one line. States without a free public geocoder fall back to Census/OSM. */
 const STATE_GEO={
-  "WV":"https://services.wvgis.wvu.edu/arcgis/rest/services/Geocode/WV_Site/GeocodeServer",        // WV GIS Tech Center — statewide Site Address Points (E-911)
-  "OR":"https://navigator.state.or.us/arcgis/rest/services/Locators/OregonAddress/GeocodeServer"   // Oregon EIS/GEO — statewide address locator
+  "AL":"https://map.ogb.state.al.us/arcgis/rest/services/ALGeocode/GeocodeServer",
+  "AR":"https://gis.arkansas.gov/arcgis/rest/services/Locator/ASDI_Composite_Locator/GeocodeServer",
+  "AZ":"https://azgeo.az.gov/arcgis/rest/services/geocoders/AZGeo_Address_Locator/GeocodeServer",
+  "CA":"https://services.gis.ca.gov/arcgis/rest/services/Location/comp_parcels_streets_poi/GeocodeServer",
+  "CO":"https://gis.colorado.gov/gp/rest/services/Geocoders/PA_Composite_Pro/GeocodeServer",
+  "DE":"https://enterprise.firstmap.delaware.gov/arcgis/rest/services/Location/Delaware_FirstMap_Locator/GeocodeServer",
+  "IA":"https://geoservices.iowa.gov/arcgis/rest/services/location/Iowa/GeocodeServer",
+  "IN":"https://gisdata.in.gov/server/rest/services/Geocode/State_Geocoder_MultiRole_WGS84/GeocodeServer",
+  "KS":"https://services.kgs.ku.edu/arcgis4/rest/services/Geocoders/KS_Geocoder_Pro/GeocodeServer",
+  "KY":"https://kygeocode.ky.gov/arcgis/rest/services/External/Ky_Geocode/GeocodeServer",
+  "MD":"https://maps.health.maryland.gov/gis/rest/services/Geocode/CompositeLocator/GeocodeServer",
+  "ME":"https://arcgisserver.maine.gov/arcgis/rest/services/NG911_MultiRole_Locator/GeocodeServer",
+  "MT":"https://gisservicemt.gov/arcgis/rest/services/MSDI_Framework/MontanaAddressLocator/GeocodeServer",
+  "NC":"https://services.nconemap.gov/secure/rest/services/AddressNC/AddressNC_geocoder/GeocodeServer",
+  "NJ":"https://geo.nj.gov/arcgis/rest/services/Tasks/NJ_Geocode/GeocodeServer",
+  "NY":"https://nysgeohub.ny.gov/arcgis/rest/services/Geocoder/NYS_Geocoder/GeocodeServer",
+  "OH":"https://maps.ohio.gov/arcgis/rest/services/OGRIP/Ogrip_locator/GeocodeServer",
+  "OR":"https://navigator.state.or.us/arcgis/rest/services/Locators/OregonAddress/GeocodeServer",
+  "RI":"https://maps.edc.uri.edu/rigis/rest/services/RIE911_address_locator/GeocodeServer",
+  "SC":"https://gis.state.sc.us/arcgis/rest/services/Geocode/RFA_MultiRole/GeocodeServer",
+  "TN":"https://tnmap.tn.gov/arcgis/rest/services/LOCATORS/TN_COMPOSITE/GeocodeServer",
+  "UT":"https://masquerade.ugrc.utah.gov/arcgis/rest/services/UtahLocator/GeocodeServer",
+  "VA":"https://vginmaps.vdem.virginia.gov/arcgis/rest/services/Geocoding/VGIN_Composite_Locator/GeocodeServer",
+  "VT":"https://maps.vcgi.vermont.gov/arcgis/rest/services/EGC_services/GCS_E911_COMPOSITE_SP_v2/GeocodeServer",
+  "WA":"https://webgis.dor.wa.gov/arcgis/rest/services/Locators/WA_Address/GeocodeServer",
+  "WV":"https://services.wvgis.wvu.edu/arcgis/rest/services/Geocode/WV_Site/GeocodeServer"
 };
 function stateFromQuery(q){ const t=q.toUpperCase().split(/[^A-Z]+/).filter(Boolean); for(let i=t.length-1;i>=0;i--){ if(t[i].length===2&&US_STATES.has(t[i])) return t[i]; } return null; }
 let __agi=0;
